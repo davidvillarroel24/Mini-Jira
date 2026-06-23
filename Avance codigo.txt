@@ -1,0 +1,10512 @@
+00_Config.gs
+const CONFIG = {
+
+  DRIVE_OBSERVACIONES:
+    "12Ka5IMbJ_4mDaaJniuMeOjzWBOvWPjci",
+  
+  ID_SHEET:
+  "10AgPGzkn2LsvEsR32Te5FPTGxy0-qcIzq6fVrJyS6mA"  
+};
+
+01_Codigo.gs
+function doGet() {
+
+  return HtmlService
+    .createTemplateFromFile('index')
+    .evaluate()
+    .setTitle('Mini Jira QA')
+    .setXFrameOptionsMode(
+      HtmlService.XFrameOptionsMode.ALLOWALL
+    );
+}
+
+function getView(name) {
+
+  return HtmlService
+    .createHtmlOutputFromFile(name)
+    .getContent();
+}
+02_Utils.gs
+function mapRow(headers, row) {
+
+  const obj = {};
+
+  headers.forEach((h, i) => {
+    obj[h] = row[i];
+  });
+
+  return obj;
+}
+
+function generateId(prefix) {
+
+  return (
+    prefix +
+    "_" +
+    new Date().getTime()
+  );
+}
+
+function include(filename) {
+
+  return HtmlService
+    .createHtmlOutputFromFile(filename)
+    .getContent();
+}
+03_Auth.gs
+function login(nombre) {
+
+  const user = DB_USERS_findByName(nombre);
+
+  if (!user) {
+    return {
+      ok: false,
+      message: "Usuario no encontrado"
+    };
+  }
+
+  if (user.Activo !== true && user.Activo !== "TRUE") {
+    return {
+      ok: false,
+      message: "Usuario inactivo"
+    };
+  }
+
+  const session = {
+
+    id: user.ID,
+
+    nombre: user.Nombre,
+
+    rol: user.Rol_principal,
+
+    roles: user.Roles_permitidos
+  };
+
+  PropertiesService
+    .getUserProperties()
+    .setProperty("SESSION", JSON.stringify(session));
+
+  return {
+    ok: true,
+    user: session
+  };
+}
+
+function getSession() {
+
+  const raw = PropertiesService
+    .getUserProperties()
+    .getProperty("SESSION");
+
+  if (!raw) {
+    return null;
+  }
+
+  return JSON.parse(raw);
+}
+
+function logout() {
+
+  PropertiesService
+    .getUserProperties()
+    .deleteProperty("SESSION");
+
+  return true;
+}
+04_Permisions.gs
+function myFunction() {
+  
+}
+05_Drive.gs
+function uploadImage(base64, fileName){
+
+  if(!base64){
+    return "";
+  }
+
+  const folder =
+    DriveApp.getFolderById(
+      CONFIG.DRIVE_OBSERVACIONES
+    );
+
+  const bytes = Utilities.base64Decode(
+    base64.split(",")[1]
+  );
+
+  const blob = Utilities.newBlob(
+    bytes,
+    "image/jpeg",
+    fileName + ".jpg"
+  );
+
+  const file = folder.createFile(blob);
+
+  file.setSharing(
+    DriveApp.Access.ANYONE_WITH_LINK,
+    DriveApp.Permission.VIEW
+  );
+
+  return file.getUrl();
+}
+06_Colors.gs
+function myFunction() {
+  
+}
+10_Users.gs
+function obtenerUsuariosActivos() {
+
+  const sh = SpreadsheetApp
+    .getActive()
+    .getSheetByName("USUARIOS");
+
+  const data =
+    sh.getDataRange().getValues();
+
+  const headers = data[0];
+
+  const result = [];
+
+  for(let i = 1; i < data.length; i++){
+
+    const obj =
+      mapRow(headers, data[i]);
+
+    // =========================
+    // SOLO ACTIVOS
+    // =========================
+
+    if(
+
+      String(obj.Activo)
+        .trim()
+        .toUpperCase()
+
+      ===
+
+      "TRUE"
+
+    ){
+
+      result.push({
+
+        id: obj.ID,
+
+        nombre: obj.Nombre,
+
+        rol: obj.Rol_principal
+
+      });
+    }
+  }
+  Logger.log(result);
+  return result;
+}
+
+function obtenerDevs() {
+
+  return obtenerUsuariosActivos()
+
+    .filter(x =>
+
+      String(
+        x.ROL_PRINCIPAL
+      ).toUpperCase()
+
+      ===
+
+      "DEV"
+    )
+
+    .filter(x =>
+
+      String(
+        x.ACTIVO
+      ).toUpperCase()
+
+      ===
+
+      "TRUE"
+    );
+}
+
+
+function DB_USUARIOS_getActivos(){
+
+  const sh =
+    SpreadsheetApp
+      .getActive()
+      .getSheetByName("USUARIOS");
+
+  const data =
+    sh.getDataRange()
+      .getValues();
+
+  const headers =
+    data[0];
+
+  const result = [];
+
+  for(let i = 1; i < data.length; i++){
+
+    const obj =
+      mapRow(
+        headers,
+        data[i]
+      );
+
+    if(
+
+      String(
+        obj.Activo
+      )
+      .toUpperCase()
+
+      ===
+
+      "TRUE"
+
+    ){
+
+      result.push(obj);
+
+    }
+
+  }
+
+  return result;
+
+}
+
+function prueba123(){
+  Logger.log(DB_USUARIOS_getActivos())
+}
+
+11_Tareas.gs
+function obtenerTareas(
+  user,
+  filters = {}
+){
+
+  Logger.log(user);
+
+  Logger.log(
+    JSON.stringify(filters)
+  );
+
+  if(!user){
+
+    throw new Error(
+      "No autenticado"
+    );
+  }
+
+  return TASK_SERVICE_list(
+    user,
+    filters
+  );
+}
+
+
+function crearTarea(payload){
+
+  const user =
+    getSession();
+
+  if(!user){
+
+    throw new Error(
+      "No autenticado"
+    );
+  }
+
+  return TASK_SERVICE_create(
+    payload,
+    user
+  );
+}
+12_Observaciones.gs
+function crearObservacion(payload) {
+
+  const user = getSession();
+
+  if (!user) {
+    throw new Error("No autenticado");
+  }
+
+  if (user.rol !== "QA") {
+    throw new Error("Solo QA puede crear");
+  }
+
+  return OBS_SERVICE_create(payload, user);
+}
+
+
+function obtenerObservaciones(
+  user,
+  filters = {}
+) {
+
+  //const user =
+  //  getSession();
+
+  Logger.log(user);
+
+  Logger.log(
+    JSON.stringify(filters)
+  );
+
+  if(!user){
+
+    throw new Error(
+      "No autenticado"
+    );
+  }
+
+  return OBS_SERVICE_list(
+    user,
+    filters
+  );
+}
+13_Dashboard.gs
+function getDashboardData() {
+
+  const user = getSession();  
+
+  if (!user) {
+    throw new Error("Sesión inválida");
+  }
+
+  return {
+    user: user
+  };
+}
+14_Pdf.gs
+function generarPDF(ids){
+
+  // =========================
+  // HTML
+  // =========================
+    
+  const html =
+    generarPreviewInforme(
+      ids,
+      "pdf"
+  );
+
+  // =========================
+  // PDF
+  // =========================
+
+  const blob =
+
+    HtmlService
+
+      .createHtmlOutput(html)
+
+      .getBlob()
+
+      .getAs('application/pdf');
+
+  // =========================
+  // USER
+  // =========================
+
+  const user =
+    getSession();
+
+  // =========================
+  // FECHA
+  // =========================
+
+  const fecha =
+
+    Utilities.formatDate(
+
+      new Date(),
+
+      Session.getScriptTimeZone(),
+
+      "yyyyMMdd_HHmmss"
+    );
+
+  // =========================
+  // NOMBRE
+  // =========================
+
+  const nombre =
+
+    `${user.nombre}-${user.rol}-${fecha}.pdf`;
+
+  // =========================
+  // BASE64
+  // =========================
+
+  const base64 =
+
+    Utilities.base64Encode(
+      blob.getBytes()
+    );
+
+  // =========================
+  // RETURN
+  // =========================
+
+  return {
+
+    base64:
+      base64,
+
+    nombre:
+      nombre
+  };
+}
+
+function obtenerDataPDF(ids){
+
+  return DB_OBS_getAll()
+
+    .filter(x =>
+
+      ids.includes(
+        x.ID_OBSERVACION
+      )
+    )
+
+    .map(obs => {
+
+      let imageBase64 = "";
+
+      // =========================
+      // IMAGEN
+      // =========================
+
+      try{
+
+        if(obs.CAPTURAS){
+
+          const match =
+
+            obs.CAPTURAS.match(
+              /[-\w]{25,}/
+            );
+
+          if(match){
+
+            const fileId =
+              match[0];
+
+            const file =
+
+              DriveApp
+                .getFileById(
+                  fileId
+                );
+
+            // =========================
+            // JPG
+            // =========================
+
+            const blob =
+
+              file
+
+                .getBlob()
+
+                .getAs(
+                  MimeType.JPEG
+                );
+
+            imageBase64 =
+
+              Utilities.base64Encode(
+                blob.getBytes()
+              );
+          }
+        }
+
+      }catch(err){
+
+        Logger.log(err);
+      }
+
+      // =========================
+      // RETURN
+      // =========================
+
+      return {
+
+        ID_OBSERVACION:
+          obs.ID_OBSERVACION,
+
+        FECHA:
+          obs.FECHA,
+
+        QA:
+          obs.QA,
+
+        MODULO:
+          obs.MODULO,
+
+        ESTADO:
+          obs.ESTADO,
+
+        PRIORIDAD:
+          obs.PRIORIDAD,
+
+        DESCRIPCION_CORTA:
+          obs.DESCRIPCION_CORTA,
+
+        PASOS_REPRODUCIR:
+          obs.PASOS_REPRODUCIR,
+
+        IMAGEN_BASE64:
+          imageBase64
+      };
+    });
+}
+15_Informes.gs
+function generarPreviewInforme(
+  ids,
+  modo = "preview"
+){
+
+  // =========================
+  // OBTENER OBSERVACIONES
+  // =========================
+
+  const observaciones =
+    DB_OBS_getAll()
+
+    .filter(x =>
+
+      ids.includes(
+        x.ID_OBSERVACION
+      )
+    )
+
+    .map(obs => {
+
+      let imageUrl = "";
+
+      if(obs.CAPTURAS){
+
+        const match =
+          obs.CAPTURAS.match(
+            /[-\w]{25,}/
+          );
+
+        if(match){
+
+          const fileId =
+            match[0];
+
+          // =========================
+          // PREVIEW HTML
+          // =========================
+
+          if(modo === "preview"){
+
+            imageUrl =
+
+              `https://lh3.googleusercontent.com/d/${fileId}`;
+          }
+
+          // =========================
+          // PDF
+          // =========================
+
+          if(modo === "pdf"){
+
+            try{
+
+              const file =
+                DriveApp.getFileById(
+                  fileId
+                );
+
+              const blob =
+                file
+
+                  .getBlob()
+
+                  .getAs(
+                    MimeType.JPEG
+                  );
+
+              const base64 =
+
+                Utilities.base64Encode(
+                  blob.getBytes()
+                );
+
+              imageUrl =
+
+                `data:image/jpeg;base64,${base64}`;
+
+            }catch(err){
+
+              Logger.log(err);
+            }
+          }
+        }
+      }
+      // =========================
+      // RETURN
+      // =========================
+
+      return {
+
+        ID_OBSERVACION:
+          obs.ID_OBSERVACION,
+
+        QA:
+          obs.QA,
+
+        FECHA:
+          Utilities.formatDate(
+            new Date(obs.FECHA),
+            Session.getScriptTimeZone(),
+            "dd/MM/yyyy HH:mm"
+          ),
+
+        MODULO:
+          obs.MODULO,
+
+        DESCRIPCION_CORTA:
+          obs.DESCRIPCION_CORTA,
+
+        PASOS_REPRODUCIR:
+          obs.PASOS_REPRODUCIR,
+
+        //IMAGEN_BASE64:
+        //  imagenBase64
+        IMAGEN_URL:
+          imageUrl
+      };
+    });
+
+  // =========================
+  // TEMPLATE
+  // =========================
+
+  const template =
+    HtmlService.createTemplateFromFile(
+      "template_informe"
+    );
+
+  template.fecha =
+    Utilities.formatDate(
+      new Date(),
+      Session.getScriptTimeZone(),
+      "dd/MM/yyyy HH:mm"
+    );
+
+  template.observaciones =
+    observaciones;
+
+  // =========================
+  // HTML FINAL
+  // =========================
+
+
+
+
+  return template
+    .evaluate()
+    .getContent();
+}
+20_DBUsers.gs
+function DB_USERS_findByName(nombre) {
+
+  const sh = SpreadsheetApp
+    .getActive()
+    .getSheetByName("USUARIOS");
+
+  const data = sh.getDataRange().getValues();
+
+  const headers = data[0];
+
+  for (let i = 1; i < data.length; i++) {
+
+    const row = data[i];
+
+    const obj = mapRow(headers, row);
+
+    if (
+      obj.Nombre.toString().trim().toUpperCase() ===
+      nombre.toString().trim().toUpperCase()
+    ) {
+      return obj;
+    }
+  }
+
+  return null;
+}
+21_DBTAreas.gs
+function DB_TASK_getAll() {
+
+  const sh = SpreadsheetApp
+    .getActive()
+    .getSheetByName("TAREAS");
+
+  const data =
+    sh.getDataRange().getValues();
+
+  const headers = data[0];
+
+  const result = [];
+
+  for(let i = 1; i < data.length; i++){
+
+    const obj =
+      mapRow(
+        headers,
+        data[i]
+      );
+
+    // =========================
+    // CONVERTIR FECHAS
+    // =========================
+
+    [
+      "FECHA",
+      "FECHA_CORRECCION",
+      "FECHA_CIERRE",
+      "FECHA_ASIGNACION"
+    ].forEach(campo => {
+
+      if(
+        obj[campo] instanceof Date
+      ){
+
+        obj[campo] =
+          Utilities.formatDate(
+            obj[campo],
+            Session.getScriptTimeZone(),
+            "dd/MM/yyyy HH:mm:ss"
+          );
+      }
+    });
+
+    result.push(obj);
+  }
+
+  return result;
+}
+
+function pruebita333(){
+ Logger.log(DB_TASK_getAll())
+}
+
+function DB_TASK_insert(
+  task
+){
+
+  const sh =
+    SpreadsheetApp
+      .getActive()
+      .getSheetByName(
+        "TAREAS"
+      );
+
+  sh.appendRow([
+
+    task.ID_OBSERVACION,
+
+    task.FECHA,
+
+    task.QA,
+
+    task.DEV_ASIGNADO,
+
+    task.VALIDACION_RELACIONADA,
+
+    task.MODULO,
+
+    task.DESCRIPCION_CORTA,
+
+    task.PASOS_REPRODUCIR,
+
+    task.CAPTURAS,
+
+    task.ESTADO,
+
+    task.PRIORIDAD,
+
+    task.COMENTARIO_JSON,
+
+    task.FECHA_CORRECCION,
+
+    task.FECHA_CIERRE,
+
+    task.ELIMINADO,
+
+    task.TIPO,
+
+    task.FECHA_ASIGNACION
+
+  ]);
+}
+
+
+
+function dbGetTareaById(id){
+
+  const sh =
+    SpreadsheetApp
+      .openById(CONFIG.ID_SHEET)
+      .getSheetByName("TAREAS");
+
+  const data =
+    sh.getDataRange().getValues();
+
+  const headers =
+    data[0];
+
+  for(let i = 1; i < data.length; i++){
+
+    if(
+      String(data[i][0]) === String(id)
+    ){
+
+      let obj = {};
+
+      headers.forEach((h,j)=>{
+
+        const value =
+          data[i][j];
+
+        obj[h] =
+
+          value instanceof Date
+
+          ?
+
+          value.toISOString()
+
+          :
+
+          value;
+
+      });
+
+      return obj;
+    }
+  }
+
+  return null;
+}
+
+
+function DB_TASK_update(
+  payload
+){
+
+  const sh =
+    SpreadsheetApp
+      .getActive()
+      .getSheetByName(
+        "TAREAS"
+      );
+
+  const data =
+    sh.getDataRange()
+      .getValues();
+
+  const headers =
+    data[0];
+
+  const col = {};
+
+  headers.forEach((h,i) => {
+
+    col[
+      String(h)
+        .trim()
+        .toUpperCase()
+    ] = i + 1;
+
+  });
+
+  for(
+    let i = 1;
+    i < data.length;
+    i++
+  ){
+
+    if(
+
+      String(
+        data[i][
+          col["ID_OBSERVACION"] - 1
+        ]
+      )
+
+      ===
+
+      String(
+        payload.ID_OBSERVACION
+      )
+
+    ){
+
+      sh.getRange(
+        i + 1,
+        col["MODULO"]
+      ).setValue(
+        payload.MODULO
+      );
+
+      sh.getRange(
+        i + 1,
+        col["DESCRIPCION_CORTA"]
+      ).setValue(
+        payload.DESCRIPCION_CORTA
+      );
+
+      sh.getRange(
+        i + 1,
+        col["PASOS_REPRODUCIR"]
+      ).setValue(
+        payload.PASOS_REPRODUCIR
+      );
+
+      sh.getRange(
+        i + 1,
+        col["PRIORIDAD"]
+      ).setValue(
+        payload.PRIORIDAD
+      );
+
+      sh.getRange(
+        i + 1,
+        col["USUARIOS_ASIGNADOS"]
+      ).setValue(
+        payload.USUARIOS_ASIGNADOS
+      );
+
+
+      // =========================
+      // CAMBIAR A EN_PROCESO
+      // SI EXISTE ALGUN ASIGNADO
+      // =========================
+
+      let tieneAsignados = false;
+
+      try{
+
+        const asignados =
+
+          JSON.parse(
+            payload.USUARIOS_ASIGNADOS || "{}"
+          );
+
+        tieneAsignados =
+
+          Object.values(asignados)
+
+            .some(lista =>
+
+              Array.isArray(lista)
+
+              &&
+
+              lista.length > 0
+
+            );
+
+      }catch(error){
+
+        Logger.log(error);
+
+      }
+
+      if(tieneAsignados){
+
+        sh.getRange(
+          i + 1,
+          col["ESTADO"]
+        ).setValue(
+          "EN_PROCESO"
+        );
+
+      }
+
+      // =========================
+      // FECHA ASIGNACION
+      // SOLO LA PRIMERA VEZ
+      // =========================
+
+      const fechaAsignacionActual =
+
+        data[i][
+          col["FECHA_ASIGNACION"] - 1
+        ];
+
+      if(
+
+        !fechaAsignacionActual ||
+
+        !(fechaAsignacionActual instanceof Date)
+
+      ){
+
+        sh.getRange(
+          i + 1,
+          col["FECHA_ASIGNACION"]
+        ).setValue(
+          new Date()
+        );
+
+      }
+      
+      return {
+        ok:true
+      };
+
+    }
+
+  }
+
+  throw new Error(
+    "No se encontró la tarea: " +
+    payload.ID_OBSERVACION
+  );
+
+}
+22_DBObsrevaciones.gs
+function DB_OBS_insert(obs) {
+
+  const sh = SpreadsheetApp
+    .getActive()
+    .getSheetByName("OBSERVACIONES");
+
+  sh.appendRow([
+    obs.ID_OBSERVACION,
+    obs.Fecha,
+    obs.QA,
+    obs.DEV_asignado,
+    obs.Validación_relacionada,
+    obs.Módulo,
+    obs.Descripción_corta,
+    obs.Pasos_reproducir,
+    obs.Capturas,
+    obs.Estado,
+    obs.Prioridad,
+    obs.DEV_comentario,
+    obs.Fecha_corrección,
+    obs.Fecha_cierre
+  ]);
+}
+
+function DB_OBS_getAll() {
+
+  const sh = SpreadsheetApp
+    .getActive()
+    .getSheetByName("OBSERVACIONES");
+
+  const data =
+    sh.getDataRange().getValues();
+
+  const headers = data[0];
+
+  const result = [];
+
+  for(let i = 1; i < data.length; i++){
+
+    const obj =
+      mapRow(headers, data[i]);
+
+    // =========================
+    // CONVERTIR FECHAS
+    // =========================
+
+    [
+      "FECHA",
+      "FECHA_CORRECCION",
+      "FECHA_CIERRE",
+      "FECHA_ASIGNACION"
+    ].forEach(campo => {
+
+      if(obj[campo] instanceof Date){
+
+        obj[campo] =
+          Utilities.formatDate(
+            obj[campo],
+            Session.getScriptTimeZone(),
+            "dd/MM/yyyy HH:mm:ss"
+          );
+      }
+    });
+
+    result.push(obj);
+  }
+
+  return result;
+}
+
+
+function dbGetObservacionById(id){
+
+  const sh =
+    SpreadsheetApp
+      .openById(CONFIG.ID_SHEET)
+      .getSheetByName("OBSERVACIONES");
+
+  const data =
+    sh.getDataRange().getValues();
+
+  const headers =
+    data[0];
+
+  for(let i = 1; i < data.length; i++){
+
+    if(
+      String(data[i][0]) === String(id)
+    ){
+
+      let obj = {};
+
+      headers.forEach((h,j)=>{
+
+        //obj[h] = data[i][j];
+
+        const value = data[i][j];
+
+        obj[h] =
+
+          value instanceof Date
+
+          ?
+
+          value.toISOString()
+
+          :
+
+          value;
+
+      });
+
+      return obj;
+    }
+  }
+
+  return null;
+}
+
+function actualizarObservacion(payload){
+
+console.log(payload);
+
+  const user =
+    getSession();
+
+  if(!user){
+
+    throw new Error(
+      "No autenticado"
+    );
+  }
+
+  return OBS_SERVICE_update(
+    payload,
+    user
+  );
+}
+
+function prueba(id){
+  id="OBS_1779264162758"
+  Logger.log(dbGetObservacionById(id))
+}
+23_DBHistorial.gs
+function myFunction() {
+  
+}
+24_DB_Informes.gs
+function myFunction() {
+  
+}
+25_DB_InformesDetalle.gs
+function myFunction() {
+  
+}
+30_Workflow.gs
+function myFunction() {
+  
+}
+31_TAreaService.gs
+function TASK_SERVICE_list(
+  user,
+  filters = {}
+){
+
+  let data =
+    DB_TASK_getAll();
+
+  // =========================
+  // FILTRO DE VISTA
+  // =========================
+
+  switch(filters.view){
+
+    case "ELIMINADAS":
+
+      data =
+        data.filter(
+          task => isDeleted(task)
+        );
+
+      break;
+
+    default:
+
+      data =
+        data.filter(
+          task => !isDeleted(task)
+        );
+  }
+
+  // =========================
+  // ROLES
+  // =========================
+
+  const roles =
+    String(user.roles || "")
+      .toUpperCase();
+
+  // =========================
+  // PM Y LIDERES VEN TODO
+  // =========================
+
+  if(
+
+    roles.includes("PM") ||
+    roles.includes("LIDER_QA") ||
+    roles.includes("LIDER_DEV")
+
+  ){
+
+    return data;
+  }
+if(
+
+  user.rol === "QA"
+
+  ||
+
+  user.rol === "DEV"
+
+){
+
+  return data.filter(task =>
+
+    usuarioAsignadoATarea(
+
+      task,
+
+      user.nombre,
+
+      user.rol
+
+    )
+
+  );
+
+}
+}
+
+
+//helper para las tareas asignadas
+
+function usuarioAsignadoATarea(
+  tarea,
+  nombre,
+  rol
+){
+
+  try{
+
+    const asignados =
+
+      JSON.parse(
+        tarea.USUARIOS_ASIGNADOS || "{}"
+      );
+
+    const lista =
+
+      asignados[rol] || [];
+
+    return lista.some(x =>
+
+      String(x)
+        .trim()
+        .toUpperCase()
+
+      ===
+
+      String(nombre)
+        .trim()
+        .toUpperCase()
+
+    );
+
+  }
+  catch(error){
+
+    Logger.log(error);
+
+    return false;
+
+  }
+
+}
+
+//fin de helper
+
+
+function TASK_SERVICE_create(
+  payload,
+  user
+){
+
+  const id =
+    generateId("TASK");
+
+  let imageUrl = "";
+
+  if(payload.Imagen){
+
+    imageUrl =
+      uploadImage(
+        payload.Imagen,
+        id
+      );
+  }
+
+  const tarea = {
+
+    ID_OBSERVACION:
+      id,
+
+    FECHA:
+      new Date(),
+
+    QA:
+      payload.creadoPor,
+
+    DEV_ASIGNADO:
+      "",
+
+    VALIDACION_RELACIONADA:
+      "",
+
+    MODULO:
+      payload.Modulo,
+
+    DESCRIPCION_CORTA:
+      payload.Descripcion,
+
+    PASOS_REPRODUCIR:
+      payload.Pasos,
+
+    CAPTURAS:
+      imageUrl,
+
+    ESTADO:
+      "ABIERTO",
+
+    PRIORIDAD:
+      payload.Prioridad,
+
+    COMENTARIO_JSON:
+      "[]",
+
+    FECHA_CORRECCION:
+      "",
+
+    FECHA_CIERRE:
+      "",
+
+    ELIMINADO:
+      "",
+
+    TIPO:
+      "TAREA",
+
+    FECHA_ASIGNACION:
+      ""
+  };
+
+  DB_TASK_insert(
+    tarea
+  );
+
+  return {
+
+    ok:true,
+
+    id:id
+  };
+}
+
+function getTareaById(id){
+
+  return dbGetTareaById(id);
+
+}
+
+
+function obtenerUsuariosAsignables(){
+
+  return DB_USUARIOS_getActivos();
+
+}
+
+
+function guardarEdicionTarea(
+  payload
+){
+
+  return TASK_SERVICE_update(
+    payload
+  );
+
+}
+
+function TASK_SERVICE_update(
+  payload
+){
+
+  DB_TASK_update(
+    payload
+  );
+
+  return {
+    ok:true
+  };
+
+}
+
+//function TASK_SERVICE_delete(id){
+//
+//  return DB_TASK_delete(id);
+//
+//}
+
+function TASK_SERVICE_delete(id){
+
+  const sh =
+    SpreadsheetApp
+      .openById(
+        CONFIG.ID_SHEET
+      )
+      .getSheetByName(
+        "TAREAS"
+      );
+
+  const data =
+    sh.getDataRange()
+      .getValues();
+
+  const headers =
+    data[0];
+
+  const col = {};
+
+  headers.forEach((h,i) => {
+
+    col[
+      String(h)
+        .trim()
+        .toUpperCase()
+    ] = i + 1;
+
+  });
+
+  for(
+    let i = 1;
+    i < data.length;
+    i++
+  ){
+
+    if(
+
+      String(
+        data[i][
+          col["ID_OBSERVACION"] - 1
+        ]
+      )
+
+      ===
+
+      String(id)
+
+    ){
+
+      sh.getRange(
+        i + 1,
+        col["ELIMINADO"]
+      ).setValue(
+        true
+      );
+
+      return {
+        success:true
+      };
+
+    }
+
+  }
+
+  throw new Error(
+    "Tarea no encontrada"
+  );
+
+}
+
+function TASK_SERVICE_addComment(
+  payload
+){
+
+  const sheet =
+    SpreadsheetApp
+      .openById(
+        CONFIG.ID_SHEET
+      )
+      .getSheetByName(
+        "TAREAS"
+      );
+
+  const data =
+    sheet
+      .getDataRange()
+      .getValues();
+
+  // =====================
+  // VALIDACIONES
+  // =====================
+
+  if(
+
+    payload.marcarRevision
+
+    &&
+
+    payload.rol !== "DEV"
+
+  ){
+
+    throw new Error(
+      "Solo el DEV puede marcar una observación para revisión"
+    );
+  }
+
+  if(
+
+    payload.aprobarCorreccion
+
+    &&
+
+    ![
+
+      "QA",
+      "LIDER_QA",
+      "LIDER_DEV",
+      "PM"
+
+    ].includes(
+      payload.rol
+    )
+
+  ){
+
+    throw new Error(
+      "No tiene permisos para aprobar correcciones"
+    );
+  }
+
+  if(
+
+    payload.rechazarCorreccion
+
+    &&
+
+    ![
+
+      "QA",
+      "LIDER_QA",
+      "LIDER_DEV",
+      "PM"
+
+    ].includes(
+      payload.rol
+    )
+
+  ){
+
+    throw new Error(
+      "No tiene permisos para rechazar correcciones"
+    );
+  }
+
+  const acciones =
+
+    Number(
+      !!payload.marcarRevision
+    )
+
+    +
+
+    Number(
+      !!payload.aprobarCorreccion
+    )
+
+    +
+
+    Number(
+      !!payload.rechazarCorreccion
+    );
+
+  if(
+    acciones > 1
+  ){
+
+    throw new Error(
+      "Solo puede realizar una acción por comentario"
+    );
+  }
+
+  // =====================
+  // BUSCAR OBSERVACION
+  // =====================
+
+  for(let i = 1; i < data.length; i++){
+
+    if(
+
+      String(data[i][0])
+
+      ===
+
+      String(payload.id)
+
+    ){
+
+      let comentarios = [];
+
+      try{
+
+        comentarios =
+          JSON.parse(
+            data[i][11] || "[]"
+          );
+
+      }
+      catch(e){
+
+        comentarios = [];
+      }
+
+      comentarios.push({
+
+        usuario:
+          payload.usuario,
+
+        rol:
+          payload.rol,
+
+        fecha:
+          Utilities.formatDate(
+
+            new Date(),
+
+            Session
+              .getScriptTimeZone(),
+
+            "yyyy-MM-dd HH:mm:ss"
+
+          ),
+
+        mensaje:
+          payload.mensaje,
+
+        accion:
+
+          payload.marcarRevision
+            ? "EN_REVISION"
+
+          :
+
+          payload.aprobarCorreccion
+            ? "APROBADO"
+
+          :
+
+          payload.rechazarCorreccion
+            ? "RECHAZADO"
+
+          :
+
+          "COMENTARIO"
+
+      });
+
+      // =====================
+      // COMENTARIO_JSON
+      // =====================
+
+      data[i][11] =
+        JSON.stringify(
+          comentarios
+        );
+
+      // =====================
+      // DEV ENVIA
+      // =====================
+
+      if(
+        payload.rol === "DEV"
+      ){
+
+        data[i][12] =
+          new Date();
+      }
+
+      // =====================
+      // ENVIA A REVISION
+      // =====================
+
+      if(
+        payload.marcarRevision
+      ){
+
+        data[i][9] =
+          "EN_REVISION";
+      }
+
+      // =====================
+      // APRUEBA
+      // =====================
+
+      if(
+        payload.aprobarCorreccion
+      ){
+
+        data[i][9] =
+          "CERRADO";
+
+        data[i][13] =
+          new Date();
+      }
+
+      // =====================
+      // RECHAZA
+      // =====================
+
+      if(
+        payload.rechazarCorreccion
+      ){
+
+        data[i][9] =
+          "EN_PROCESO";
+
+        data[i][13] =
+          "";
+      }
+
+      // =====================
+      // GUARDAR
+      // =====================
+
+      sheet
+        .getRange(
+          i + 1,
+          1,
+          1,
+          data[i].length
+        )
+        .setValues([
+          data[i]
+        ]);
+
+      return {
+        success:true
+      };
+    }
+  }
+
+  throw new Error(
+    "Observación no encontrada"
+  );
+}
+
+
+function TASK_SERVICE_restore(id){
+
+  const sh =
+
+    SpreadsheetApp
+
+      .openById(
+        CONFIG.ID_SHEET
+      )
+
+      .getSheetByName(
+        "TAREAS"
+      );
+
+  const data =
+    sh.getDataRange()
+      .getValues();
+
+  const headers =
+    data[0];
+
+  const col = {};
+
+  headers.forEach((h,i) => {
+
+    col[
+      String(h)
+        .trim()
+        .toUpperCase()
+    ] = i + 1;
+
+  });
+
+  for(
+    let i = 1;
+    i < data.length;
+    i++
+  ){
+
+    if(
+
+      String(
+        data[i][
+          col["ID_OBSERVACION"] - 1
+        ]
+      )
+
+      ===
+
+      String(id)
+
+    ){
+
+      sh.getRange(
+        i + 1,
+        col["ELIMINADO"]
+      ).setValue(
+        false
+      );
+
+      return {
+        success:true
+      };
+
+    }
+
+  }
+
+  throw new Error(
+    "Tarea no encontrada"
+  );
+
+}
+32_ObservacionesService.gs
+function OBS_SERVICE_create(payload, user) {
+
+  const id =
+    generateId("OBS");
+
+  let imageUrl = "";
+
+  if(payload.Imagen){
+
+    imageUrl = uploadImage(
+      payload.Imagen,
+      id
+    );
+  }
+
+  const observacion = {
+
+    ID_OBSERVACION: id,
+
+    Fecha: new Date(),
+
+    QA: payload.qa, //user.nombre,
+
+    DEV_asignado: "",
+
+    Validación_relacionada: "",
+
+    Módulo: payload.Modulo,
+
+    Descripción_corta:
+      payload.Descripcion,
+
+    Pasos_reproducir:
+      payload.Pasos,
+
+    Capturas: imageUrl,
+
+    Estado: "ABIERTO",
+
+    Prioridad:
+      payload.Prioridad,
+
+    DEV_comentario: "",
+
+    Fecha_corrección: "",
+
+    Fecha_cierre: ""
+  };
+
+  DB_OBS_insert(observacion);
+
+  return {
+    ok:true,
+    id:id
+  };
+}
+
+
+function isDeleted(obs){
+
+  return String(obs.ELIMINADO || "")
+    .trim()
+    .toUpperCase() === "TRUE";
+}
+
+function OBS_SERVICE_list(
+  user,
+  filters = {}
+) {
+
+  let data =
+    DB_OBS_getAll();
+
+  // =========================
+  // FILTRO DE VISTA
+  // =========================
+
+  switch(filters.view){
+
+    case "ELIMINADAS":
+
+      data =
+        data.filter(
+          obs => isDeleted(obs)
+        );
+
+      break;
+
+    default:
+
+      data =
+        data.filter(
+          obs => !isDeleted(obs)
+        );
+  }
+
+  // =========================
+  // ROLES
+  // =========================
+
+  const roles =
+    String(user.roles || "")
+      .toUpperCase();
+
+  // =========================
+  // PM Y LIDERES VEN TODO
+  // =========================
+
+  if(
+
+    roles.includes("PM") ||
+    roles.includes("LIDER_QA") ||
+    roles.includes("LIDER_DEV")
+
+  ){
+
+    return data;
+  }
+
+  // =========================
+  // QA VE SOLO SUS OBS
+  // =========================
+
+  if(user.rol === "QA"){
+
+    return data.filter(x =>
+
+      String(x.QA)
+        .trim()
+        .toUpperCase()
+
+      ===
+
+      String(user.nombre)
+        .trim()
+        .toUpperCase()
+    );
+  }
+
+  // =========================
+  // DEV VE SOLO ASIGNADAS
+  // =========================
+
+  if(user.rol === "DEV"){
+
+    return data.filter(x =>
+
+      String(x.DEV_ASIGNADO)
+        .trim()
+        .toUpperCase()
+
+      ===
+
+      String(user.nombre)
+        .trim()
+        .toUpperCase()
+    );
+  }
+
+  // =========================
+  // DEFAULT
+  // =========================
+
+  return [];
+}
+
+function getObservacionById(id){
+
+  return dbGetObservacionById(id);
+
+}
+
+
+
+function OBS_SERVICE_update(
+  payload,
+  user
+){
+
+  Logger.log(
+    JSON.stringify(payload)
+  );
+
+  const sheet =
+    SpreadsheetApp
+      .openById(
+        CONFIG.ID_SHEET
+      )
+      .getSheetByName(
+        "OBSERVACIONES"
+      );
+
+  const data =
+    sheet
+      .getDataRange()
+      .getValues();
+
+  const headers =
+    data[0];
+
+  const idCol =
+    headers.indexOf(
+      "ID_OBSERVACION"
+    );
+
+  const moduloCol =
+    headers.indexOf(
+      "MODULO"
+    );
+
+  const descCol =
+    headers.indexOf(
+      "DESCRIPCION_CORTA"
+    );
+
+  const pasosCol =
+    headers.indexOf(
+      "PASOS_REPRODUCIR"
+    );
+
+  const prioridadCol =
+    headers.indexOf(
+      "PRIORIDAD"
+    );
+
+  const capturasCol =
+    headers.indexOf(
+      "CAPTURAS"
+    );
+
+  for(
+
+    let i = 1;
+
+    i < data.length;
+
+    i++
+
+  ){
+
+    if(
+
+      String(
+        data[i][idCol]
+      )
+
+      ===
+
+      String(
+        payload
+          .ID_OBSERVACION
+      )
+
+    ){
+
+      // =====================
+      // TEXTO
+      // =====================
+
+      data[i][moduloCol] =
+
+        payload.MODULO;
+
+      data[i][descCol] =
+
+        payload
+          .DESCRIPCION_CORTA;
+
+      data[i][pasosCol] =
+
+        payload
+          .PASOS_REPRODUCIR;
+
+      data[i][prioridadCol] =
+
+        payload.PRIORIDAD;
+
+      // =====================
+      // IMAGEN
+      // =====================
+
+      const tieneImagen =
+
+        data[i][capturasCol];
+
+      if(
+
+        !tieneImagen &&
+
+        payload.Imagen
+
+      ){
+
+        Logger.log(
+          "Subiendo imagen..."
+        );
+
+        const imageUrl =
+
+          uploadImage(
+
+            payload.Imagen,
+
+            payload
+              .ID_OBSERVACION
+
+          );
+
+        Logger.log(
+          imageUrl
+        );
+
+        data[i][capturasCol] =
+          imageUrl;
+      }
+
+      break;
+    }
+  }
+
+  sheet
+    .getDataRange()
+    .setValues(data);
+
+  return true;
+}
+
+function OBS_SERVICE_delete(id){
+
+  const sheet =
+    SpreadsheetApp
+      .openById(
+        CONFIG.ID_SHEET
+      )
+      .getSheetByName(
+        "OBSERVACIONES"
+      );
+
+  const data =
+    sheet.getDataRange().getValues();
+
+  for(let i = 1; i < data.length; i++){
+
+    if(data[i][0] == id){
+
+      // Columna O
+      sheet.getRange(i + 1, 15)
+        .setValue(true);
+
+      return {
+        success:true
+      };
+    }
+  }
+
+  throw new Error(
+    "Observación no encontrada"
+  );
+}
+
+
+function OBS_SERVICE_restore(id) {
+
+  const sheet =
+    SpreadsheetApp
+      .openById(
+        CONFIG.ID_SHEET
+      )
+      .getSheetByName(
+        "OBSERVACIONES"
+      );
+
+  const data =
+    sheet
+      .getDataRange()
+      .getValues();
+
+  for(let i = 1; i < data.length; i++){
+
+    if(data[i][0] == id){
+
+      // Columna O = 15
+
+      sheet
+        .getRange(
+          i + 1,
+          15
+        )
+        .setValue("FALSE");
+
+      return {
+        success:true
+      };
+    }
+  }
+
+  throw new Error(
+    "Observación no encontrada"
+  );
+}
+
+function USUARIOS_SERVICE_getDevs(){
+
+  return obtenerUsuariosActivos()
+
+    .filter(
+      user => user.rol === "DEV"
+    );
+
+  
+}
+
+function pruebita(){
+  Logger.log(USUARIOS_SERVICE_getDevs())
+}
+
+
+function OBS_SERVICE_assignDev(
+  payload
+){
+
+  const sheet =
+    SpreadsheetApp
+      .openById(
+        CONFIG.ID_SHEET
+      )
+      .getSheetByName(
+        "OBSERVACIONES"
+      );
+
+  const data =
+    sheet
+      .getDataRange()
+      .getValues();
+
+  for(let i = 1; i < data.length; i++){
+
+    if(
+
+      String(data[i][0])
+      ===
+      String(payload.id)
+
+    ){
+
+      // ====================
+      // PRIORIDAD
+      // ====================
+
+      data[i][10] =
+        payload.prioridad;
+
+      // ====================
+      // DEV ASIGNADO
+      // ====================
+
+      data[i][3] =
+        payload.devAsignado || "";
+
+      // ====================
+      // SIN DEV
+      // ====================
+
+      if(
+        !payload.devAsignado
+      ){
+
+        data[i][9] =
+          "ABIERTO";
+
+        data[i][16] =
+          "";
+
+      }
+
+      // ====================
+      // CON DEV
+      // ====================
+
+      else{
+
+        data[i][9] =
+          "EN_PROCESO";
+
+        if(
+          !data[i][16]
+        ){
+
+          data[i][16] =
+            new Date();
+        }
+
+      }
+
+      // ====================
+      // GUARDAR FILA
+      // ====================
+
+      sheet
+        .getRange(
+          i + 1,
+          1,
+          1,
+          data[i].length
+        )
+        .setValues([
+          data[i]
+        ]);
+
+      return {
+        success:true
+      };
+    }
+  }
+
+  throw new Error(
+    "Observación no encontrada"
+  );
+}
+
+function OBS_SERVICE_addComment(
+  payload
+){
+
+  const sheet =
+    SpreadsheetApp
+      .openById(
+        CONFIG.ID_SHEET
+      )
+      .getSheetByName(
+        "OBSERVACIONES"
+      );
+
+  const data =
+    sheet
+      .getDataRange()
+      .getValues();
+
+  // =====================
+  // VALIDACIONES
+  // =====================
+
+  if(
+
+    payload.marcarRevision
+
+    &&
+
+    payload.rol !== "DEV"
+
+  ){
+
+    throw new Error(
+      "Solo el DEV puede marcar una observación para revisión"
+    );
+  }
+
+  if(
+
+    payload.aprobarCorreccion
+
+    &&
+
+    ![
+
+      "QA",
+      "LIDER_QA",
+      "LIDER_DEV",
+      "PM"
+
+    ].includes(
+      payload.rol
+    )
+
+  ){
+
+    throw new Error(
+      "No tiene permisos para aprobar correcciones"
+    );
+  }
+
+  if(
+
+    payload.rechazarCorreccion
+
+    &&
+
+    ![
+
+      "QA",
+      "LIDER_QA",
+      "LIDER_DEV",
+      "PM"
+
+    ].includes(
+      payload.rol
+    )
+
+  ){
+
+    throw new Error(
+      "No tiene permisos para rechazar correcciones"
+    );
+  }
+
+  const acciones =
+
+    Number(
+      !!payload.marcarRevision
+    )
+
+    +
+
+    Number(
+      !!payload.aprobarCorreccion
+    )
+
+    +
+
+    Number(
+      !!payload.rechazarCorreccion
+    );
+
+  if(
+    acciones > 1
+  ){
+
+    throw new Error(
+      "Solo puede realizar una acción por comentario"
+    );
+  }
+
+  // =====================
+  // BUSCAR OBSERVACION
+  // =====================
+
+  for(let i = 1; i < data.length; i++){
+
+    if(
+
+      String(data[i][0])
+
+      ===
+
+      String(payload.id)
+
+    ){
+
+      let comentarios = [];
+
+      try{
+
+        comentarios =
+          JSON.parse(
+            data[i][11] || "[]"
+          );
+
+      }
+      catch(e){
+
+        comentarios = [];
+      }
+
+      comentarios.push({
+
+        usuario:
+          payload.usuario,
+
+        rol:
+          payload.rol,
+
+        fecha:
+          Utilities.formatDate(
+
+            new Date(),
+
+            Session
+              .getScriptTimeZone(),
+
+            "yyyy-MM-dd HH:mm:ss"
+
+          ),
+
+        mensaje:
+          payload.mensaje,
+
+        accion:
+
+          payload.marcarRevision
+            ? "EN_REVISION"
+
+          :
+
+          payload.aprobarCorreccion
+            ? "APROBADO"
+
+          :
+
+          payload.rechazarCorreccion
+            ? "RECHAZADO"
+
+          :
+
+          "COMENTARIO"
+
+      });
+
+      // =====================
+      // COMENTARIO_JSON
+      // =====================
+
+      data[i][11] =
+        JSON.stringify(
+          comentarios
+        );
+
+      // =====================
+      // DEV ENVIA
+      // =====================
+
+      if(
+        payload.rol === "DEV"
+      ){
+
+        data[i][12] =
+          new Date();
+      }
+
+      // =====================
+      // ENVIA A REVISION
+      // =====================
+
+      if(
+        payload.marcarRevision
+      ){
+
+        data[i][9] =
+          "EN_REVISION";
+      }
+
+      // =====================
+      // APRUEBA
+      // =====================
+
+      if(
+        payload.aprobarCorreccion
+      ){
+
+        data[i][9] =
+          "CERRADO";
+
+        data[i][13] =
+          new Date();
+      }
+
+      // =====================
+      // RECHAZA
+      // =====================
+
+      if(
+        payload.rechazarCorreccion
+      ){
+
+        data[i][9] =
+          "EN_PROCESO";
+
+        data[i][13] =
+          "";
+      }
+
+      // =====================
+      // GUARDAR
+      // =====================
+
+      sheet
+        .getRange(
+          i + 1,
+          1,
+          1,
+          data[i].length
+        )
+        .setValues([
+          data[i]
+        ]);
+
+      return {
+        success:true
+      };
+    }
+  }
+
+  throw new Error(
+    "Observación no encontrada"
+  );
+}
+33_InformeService.gs
+function myFunction() {
+  
+}
+
+component_modal.html
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
+  </head>
+  <body>
+    
+  </body>
+</html>
+component_navbar.html
+<nav class="navbar navbar-dark bg-dark px-3">
+
+  <div class="container-fluid">
+
+    <span class="navbar-brand">
+      Mini Jira QA
+    </span>
+
+    <div
+      id="navbarUser"
+      class="d-none flex-row align-items-center gap-2"
+      style="display:flex;"
+    >
+
+      <span
+        id="txtNavbarUser"
+        class="text-white me-3"
+      ></span>
+
+      <!-- ROLES -->
+
+      <select
+        id="cmbRoles"
+        class="form-select form-select-sm"
+        style="width:115px;"
+      >
+      </select>
+
+      <button
+        class="btn btn-outline-light btn-sm"
+        onclick="logout()"
+      >
+        Logout
+      </button>
+
+    </div>
+
+  </div>
+
+</nav>
+component_sidebar.html
+<div class="d-grid gap-2">
+
+  <button
+    class="btn btn-primary"
+    onclick="loadDashboard({
+      view:'ACTIVAS',
+      categoria:'OBSERVACION'
+    })"
+  >
+    📋 Mis Observaciones
+  </button>
+
+  <button
+    class="btn btn-primary"
+    onclick="loadDashboard({
+      view:'TAREAS',
+      categoria:'TAREA'
+    })"
+  >
+    📋 Tareas
+  </button>
+
+  <button
+    id="btnPapelera"
+    class="btn btn-secondary"
+    onclick="loadDashboard({
+      view:'ELIMINADAS',
+      categoria:'OBSERVACION'
+    })"
+  >
+    🗑 Papelera Observaciones
+  </button>
+
+</div>
+component_toast.html
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+  </head>
+  <body>
+    
+  </body>
+</html>
+index.html
+<!DOCTYPE html>
+<html>
+
+<head>
+
+  <base target="_top">
+
+  <meta
+  name="viewport"
+  charset="UTF-8"
+  content="width=device-width, initial-scale=1.0">
+
+  <title>Mini Jira QA</title>
+
+  <!-- BOOTSTRAP -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  >
+
+  <!-- DATATABLES -->
+  <link
+    rel="stylesheet"
+    href="https://cdn.datatables.net/2.3.2/css/dataTables.bootstrap5.css"
+  >
+
+  <!-- STYLES -->
+  <?!= include('style_colors'); ?>
+  <?!= include('style_main'); ?>
+
+</head>
+
+<body>
+
+  <!-- NAVBAR -->
+  <?!= include('component_navbar'); ?>
+
+  <div id="layout" class="d-flex">
+
+    <!-- SIDEBAR -->
+    <aside
+      id="sidebar"
+      class="d-none"
+    >
+      <?!= include('component_sidebar'); ?>
+    </aside>
+
+    <!-- APP -->
+    <main
+      id="app"
+      class="flex-grow-1"
+    >
+      
+      <?!= include('view_login'); ?>
+
+    </main>
+
+  </div>
+
+  <!-- JQUERY -->
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
+  <!-- SELECT2 -->
+
+  <link
+    href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css"
+    rel="stylesheet"
+  />
+
+  <script
+    src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js">
+  </script>
+
+
+  <!-- BOOTSTRAP -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- SWEET ALERT -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  <!-- DATATABLES -->
+  <script src="https://cdn.datatables.net/2.3.2/js/dataTables.js"></script>
+
+  <script src="https://cdn.datatables.net/2.3.2/js/dataTables.bootstrap5.js"></script>
+
+  <!-- SCRIPTS -->
+  <?!= include('script_observaciones'); ?>
+  <?!= include('script_tareas'); ?>
+  <?!= include('script_main'); ?>
+  <?!= include('script_dashboard'); ?>
+  <?!= include('script_observaciones'); ?>
+
+</body>
+
+</html>
+script_dashboard.html
+<script>
+  function cargarTablaObservaciones(
+  filters = {}
+){
+
+  const user = {
+
+    nombre:
+      document.getElementById(
+        "txtNavbarUser"
+      )
+      .innerText
+      .trim(),
+
+    rol:
+      document.getElementById(
+        "cmbRoles"
+      )
+      .value,
+
+    roles:
+      Array.from(
+
+        document.getElementById(
+          "cmbRoles"
+        ).options
+
+      )
+
+      .map(x => x.value)
+
+      .join(",")
+
+  };
+
+  console.log(
+    "Filtros:",
+    filters
+  );
+
+  // =========================
+  // DETERMINAR CATEGORIA
+  // =========================
+
+  const categoria =
+
+    filters.categoria
+
+    ||
+
+    $("#DshCategoria")
+      .val()
+
+    ||
+
+    "OBSERVACION";
+
+  const isTaskView =
+
+    categoria === "TAREA";
+
+  console.log(
+    "Categoria:",
+    categoria
+  );
+
+  // =========================
+  // TAREAS
+  // =========================
+
+  if(isTaskView){
+
+    $("#DshCategoria")
+      .val("TAREA");
+
+    $("#chatTipo")
+      .val("TAREA");
+
+    console.log(
+      "ChatTipo:",
+      $("#chatTipo").val()
+    );
+
+    google.script.run
+
+      .withSuccessHandler(data => {
+
+        window.dataObservaciones =
+          data;
+
+        $("#btnNuevaObservacion")
+          .show();
+
+        $("#btnPreviewInforme")
+          .show();
+
+        $("#btnNuevaObservacion")
+          .text(
+            "➕ Nueva Tarea"
+          );
+
+        $("#guardaNuevosRegistros")
+
+          .text(
+            "Guardar Tarea"
+          )
+
+          .attr(
+            "onclick",
+            "guardarTarea()"
+          );
+
+        $("#btnPapelera")
+
+          .text(
+            "🗑 Papelera Tareas"
+          )
+
+          .attr(
+            "onclick",
+
+            `loadDashboard({
+              view:'ELIMINADAS',
+              categoria:'TAREA'
+            })`
+          );
+          
+        const isTrashView =
+
+          filters.view ===
+          "ELIMINADAS";
+
+        $('#tblObservaciones')
+          .DataTable({
+
+            destroy:true,
+
+            responsive:true,
+
+            pageLength:10,
+
+            data:data,
+
+            columns:[
+
+              {
+                data:null,
+
+                render:(data)=>{
+
+                  return `
+
+                    <input
+                      type="checkbox"
+                      class="chkObs"
+                      value="${data.ID_OBSERVACION}"
+                    >
+
+                  `;
+                }
+              },
+
+              {
+                data:'ID_OBSERVACION'
+              },
+
+              {
+                data:'FECHA'
+              },
+
+              {
+                data:'QA'
+              },
+
+              {
+                data:'MODULO'
+              },
+
+              {
+                data:'ESTADO'
+              },
+
+              {
+                data:'PRIORIDAD'
+              },
+
+              {
+                data:null,
+
+                render:function(data){
+
+                  if(isTrashView){
+
+                    return `
+
+                      <button
+                        class="btn btn-success btn-sm"
+                        onclick="restaurarTarea(
+                          '${data.ID_OBSERVACION}'
+                        )"
+                      >
+                        ♻
+                      </button>
+
+                    `;
+                  }
+
+                  const rolActivo =
+
+                    document
+                      .getElementById(
+                        "cmbRoles"
+                      )
+                      .value;
+
+                  const puedeAdministrar =
+
+                    [
+
+                      "PM",
+
+                      "LIDER_QA",
+
+                      "LIDER_DEV"
+
+                    ]
+
+                    .includes(
+                      rolActivo
+                    );
+
+                  const tieneAsignados =
+
+                    tareaTieneAsignados(
+                      data
+                    );
+
+                  let botones = `
+
+                    <button
+                      class="btn btn-sm btn-primary"
+                      onclick="verTarea(
+                        '${data.ID_OBSERVACION}'
+                      )"
+                    >
+                      👁
+                    </button>
+
+                  `;
+
+                  if(
+                    puedeAdministrar
+                  ){
+
+                    botones += `
+
+                      <button
+                        class="btn btn-warning btn-sm"
+                        onclick="editarTarea(
+                          '${data.ID_OBSERVACION}'
+                        )"
+                      >
+                        ✏
+                      </button>
+
+                    `;
+
+                    if(
+                      !tieneAsignados
+                    ){
+
+                      botones += `
+
+                        <button
+                          class="btn btn-danger btn-sm"
+                          onclick="eliminarTarea(
+                            '${data.ID_OBSERVACION}'
+                          )"
+                        >
+                          🗑
+                        </button>
+
+                      `;
+                    }
+
+                  }
+
+                  if(
+                    tieneAsignados
+                  ){
+
+                    botones += `
+
+                      <button
+                        class="btn btn-info btn-sm"
+                        onclick="abrirComentarios(
+                          '${data.ID_OBSERVACION}'
+                        )"
+                      >
+                        💬
+                      </button>
+
+                    `;
+                  }
+
+                  return botones;
+
+                }
+
+              }
+
+            ]
+
+          });
+
+      })
+
+      .withFailureHandler(err => {
+
+        console.error(
+          err
+        );
+
+        Swal.fire({
+
+          icon:'error',
+
+          title:'Error',
+
+          text:err.message
+
+        });
+
+      })
+
+      .obtenerTareas(
+        user,
+        filters
+      );
+
+    return;
+
+  }
+
+  // =========================
+  // OBSERVACIONES
+  // =========================
+
+  $("#DshCategoria")
+    .val(
+      "OBSERVACION"
+    );
+
+  $("#chatTipo")
+    .val(
+      "OBSERVACION"
+    );
+
+  console.log(
+    "ChatTipo:",
+    $("#chatTipo").val()
+  );
+
+  // AQUÍ DEJA EXACTAMENTE
+  // TU BLOQUE ACTUAL DE
+  // OBSERVACIONES
+  // SIN CAMBIOS
+
+    google.script.run
+    .withSuccessHandler(data => {
+
+      window.dataObservaciones = data;
+
+
+      $("#btnNuevaObservacion")
+        .text("➕ Nueva Observación");
+
+
+      $("#tituloObservacion")
+        .text("Nueva Observación");
+
+
+      $("#DshCategoria")
+        .val("OBSERVACION");
+
+      $("#chatTipo")
+        .val("OBSERVACION");
+
+      console.log("ChatTipo: ",$("#chatTipo").val())
+
+      $("#guardaNuevosRegistros")
+
+          .text("Guardar Observación")
+
+          .attr(
+            "onclick",
+            "guardarObservacion()"
+          );
+
+      $("#btnPapelera")
+
+        .text(
+          "🗑 Papelera Observaciones"
+        )
+
+        .attr(
+          "onclick",
+
+          `loadDashboard({
+            view:'ELIMINADAS',
+            categoria:'OBSERVACION'
+          })`
+        );
+        
+      if(filters.view === "ELIMINADAS"){
+
+        $("#btnNuevaObservacion").hide();
+        $("#btnPreviewInforme").hide();
+
+
+      }else{
+
+        $("#btnNuevaObservacion").show();
+        $("#btnPreviewInforme").show();
+      }
+
+      const isTrashView =
+        filters.view === "ELIMINADAS";
+      
+        
+      $('#tblObservaciones').DataTable({
+
+        destroy: true,
+
+        responsive: true,
+
+        pageLength: 10,
+
+        data: data,
+
+        columns: [
+
+          {
+            data:null,
+
+            render:(data)=>{
+
+              return `
+
+                <input
+                  type="checkbox"
+                  class="chkObs"
+                  value="${data.ID_OBSERVACION}"
+                >
+              `;
+            }
+          },
+
+          { data:'ID_OBSERVACION' },
+          { data:'FECHA' },
+          { data:'QA' },
+          { data:'MODULO' },
+          { data:'ESTADO' },
+          { data:'PRIORIDAD' },
+
+          {
+            data:null,
+
+            render:function(data){
+
+              if(isTrashView){
+
+                return `
+
+                  <button
+                    class="btn btn-success btn-sm"
+                    onclick="restaurarObservacion(
+                      '${data.ID_OBSERVACION}'
+                    )"
+                  >
+                    ♻
+                  </button>
+
+                `;
+              }
+
+              const usuarioActivo =
+
+                document
+                  .getElementById(
+                    "txtNavbarUser"
+                  )
+                  .innerText
+                  .trim()
+                  .toUpperCase();
+
+              const rolActivo =
+
+                document
+                  .getElementById(
+                    "cmbRoles"
+                  )
+                  .value;
+
+              const puedeAdministrar =
+
+                [
+
+                  "PM",
+
+                  "LIDER_QA",
+
+                  "LIDER_DEV"
+
+                ]
+
+                .includes(
+                  rolActivo
+                );
+
+              const esCreador =
+
+                String(
+                  data.QA || ""
+                )
+
+                .trim()
+                .toUpperCase()
+
+                ===
+
+                usuarioActivo;
+
+              const tieneDevAsignado =
+
+                data.DEV_ASIGNADO
+
+                &&
+
+                String(
+                  data.DEV_ASIGNADO
+                )
+                .trim() !== "";
+
+              let botones = `
+
+                <button
+                  class="btn btn-sm btn-primary"
+                  onclick="verObservacion(
+                    '${data.ID_OBSERVACION}'
+                  )"
+                >
+                  👁
+                </button>
+
+              `;
+
+              // =====================
+              // PM / LIDERES / CREADOR
+              // =====================
+
+              if(
+
+                puedeAdministrar
+
+                ||
+
+                esCreador
+
+              ){
+
+                botones += `
+
+                  <button
+                    class="btn btn-warning btn-sm"
+                    onclick="editarObservacion(
+                      '${data.ID_OBSERVACION}'
+                    )"
+                  >
+                    ✏
+                  </button>
+
+                `;
+
+                // Solo eliminar mientras
+                // no tenga DEV asignado
+
+                if(!tieneDevAsignado){
+
+                  botones += `
+
+                    <button
+                      class="btn btn-danger btn-sm"
+                      onclick="eliminarObservacion(
+                        '${data.ID_OBSERVACION}'
+                      )"
+                    >
+                      🗑
+                    </button>
+
+                  `;
+                }
+
+              }
+
+              // =====================
+              // COMENTARIOS
+              // =====================
+
+              if(tieneDevAsignado){
+
+                botones += `
+
+                  <button
+                    class="btn btn-info btn-sm"
+                    onclick="abrirComentarios(
+                      '${data.ID_OBSERVACION}'
+                    )"
+                  >
+                    💬
+                  </button>
+
+                `;
+
+              }
+
+              return botones;
+
+            }
+          }
+        ]
+
+      });
+
+    })
+
+    .withFailureHandler(err => {
+
+      console.error(err);
+
+      Swal.fire({
+        icon:'error',
+        title:'Error',
+        text:err.message
+      });
+
+    })
+
+    .obtenerObservaciones(
+      user,
+      filters
+    );
+}
+</script>
+
+<script>
+console.log("script_dashboard cargado");
+
+function cargarTablaObservaciones2(
+  filters = {}
+) {
+
+  const user = {
+
+    nombre:
+      document.getElementById(
+        "txtNavbarUser"
+      )
+      .innerText
+      .trim(),
+
+    rol:
+      document.getElementById(
+        "cmbRoles"
+      )
+      .value,
+
+    roles:
+      Array.from(
+        document.getElementById(
+          "cmbRoles"
+        ).options
+      )
+      .map(x => x.value)
+      .join(",")
+  };
+
+  console.log(
+    "Filtros:",
+    filters
+  );
+
+     const isTaskView =
+      filters.view === "TAREAS";
+    
+    if(isTaskView){
+
+      google.script.run
+      .withSuccessHandler(data => {
+
+      window.dataObservaciones = data;
+
+        $("#btnNuevaObservacion").show();
+        $("#btnPreviewInforme").show();
+
+        $("#btnNuevaObservacion")
+          .text("➕ Nueva Tarea");
+  
+
+        $("#DshCategoria")
+          .val("TAREA");
+
+        $("#guardaNuevosRegistros")
+
+            .text("Guardar Tarea")
+
+            .attr(
+              "onclick",
+              "guardarTarea()"
+            );
+        
+        $("#chatTipo")
+          .val("TAREA");
+
+        console.log("ChatTipo: ",$("#chatTipo").val())
+        
+      const isTrashView =
+        filters.view === "ELIMINADAS";
+      
+        
+      $('#tblObservaciones').DataTable({
+
+        destroy: true,
+
+        responsive: true,
+
+        pageLength: 10,
+
+        data: data,
+
+        columns: [
+
+          {
+            data:null,
+
+            render:(data)=>{
+
+              return `
+
+                <input
+                  type="checkbox"
+                  class="chkObs"
+                  value="${data.ID_OBSERVACION}"
+                >
+              `;
+            }
+          },
+
+          { data:'ID_OBSERVACION' },
+          { data:'FECHA' },
+          { data:'QA' },
+          { data:'MODULO' },
+          { data:'ESTADO' },
+          { data:'PRIORIDAD' },
+
+          {
+            data:null,
+
+            render:function(data){
+
+              if(isTrashView){
+
+                return `
+
+                  <button
+                    class="btn btn-success btn-sm"
+                    onclick="restaurarTarea(
+                      '${data.ID_OBSERVACION}'
+                    )"
+                  >
+                    ♻
+                  </button>
+
+                `;
+              }
+
+              const rolActivo =
+
+                document
+                  .getElementById(
+                    "cmbRoles"
+                  )
+                  .value;
+
+              const puedeAdministrar =
+
+                [
+
+                  "PM",
+                  "LIDER_QA",
+                  "LIDER_DEV"
+
+                ].includes(
+                  rolActivo
+                );
+
+              const tieneAsignados =
+                tareaTieneAsignados(
+                  data
+                );
+
+              let botones = `
+
+                <button
+                  class="btn btn-sm btn-primary"
+                  onclick="verTarea(
+                    '${data.ID_OBSERVACION}'
+                  )"
+                >
+                  👁
+                </button>
+
+              `;
+
+              // =====================
+              // PM Y LIDERES
+              // =====================
+
+              if(puedeAdministrar){
+
+                botones += `
+
+                  <button
+                    class="btn btn-warning btn-sm"
+                    onclick="editarTarea(
+                      '${data.ID_OBSERVACION}'
+                    )"
+                  >
+                    ✏
+                  </button>
+
+                `;
+
+                // Solo se puede eliminar
+                // mientras no tenga asignados
+
+                if(!tieneAsignados){
+
+                  botones += `
+
+                    <button
+                      class="btn btn-danger btn-sm"
+                      onclick="eliminarTarea(
+                        '${data.ID_OBSERVACION}'
+                      )"
+                    >
+                      🗑
+                    </button>
+
+                  `;
+
+                }
+
+              }
+
+              // =====================
+              // COMENTARIOS
+              // =====================
+
+              if(tieneAsignados){
+
+                botones += `
+
+                  <button
+                    class="btn btn-info btn-sm"
+                    onclick="abrirComentarios(
+                      '${data.ID_OBSERVACION}'
+                    )"
+                  >
+                    💬
+                  </button>
+
+                `;
+
+              }
+
+              return botones;
+
+            }
+          }
+        ]
+
+      });
+
+    })
+
+    .withFailureHandler(err => {
+
+      console.error(err);
+
+      Swal.fire({
+        icon:'error',
+        title:'Error',
+        text:err.message
+      });
+
+    })
+
+    .obtenerTareas(
+      user,
+      filters
+    );
+
+  }else{
+
+    google.script.run
+    .withSuccessHandler(data => {
+
+      window.dataObservaciones = data;
+
+
+      $("#btnNuevaObservacion")
+        .text("➕ Nueva Observación");
+
+
+      $("#tituloObservacion")
+        .text("Nueva Observación");
+
+
+      $("#DshCategoria")
+        .val("OBSERVACION");
+
+      $("#chatTipo")
+        .val("OBSERVACION");
+
+      console.log("ChatTipo: ",$("#chatTipo").val())
+
+      $("#guardaNuevosRegistros")
+
+          .text("Guardar Observación")
+
+          .attr(
+            "onclick",
+            "guardarObservacion()"
+          );
+
+      if(filters.view === "ELIMINADAS"){
+
+        $("#btnNuevaObservacion").hide();
+        $("#btnPreviewInforme").hide();
+
+
+      }else{
+
+        $("#btnNuevaObservacion").show();
+        $("#btnPreviewInforme").show();
+      }
+
+      const isTrashView =
+        filters.view === "ELIMINADAS";
+      
+        
+      $('#tblObservaciones').DataTable({
+
+        destroy: true,
+
+        responsive: true,
+
+        pageLength: 10,
+
+        data: data,
+
+        columns: [
+
+          {
+            data:null,
+
+            render:(data)=>{
+
+              return `
+
+                <input
+                  type="checkbox"
+                  class="chkObs"
+                  value="${data.ID_OBSERVACION}"
+                >
+              `;
+            }
+          },
+
+          { data:'ID_OBSERVACION' },
+          { data:'FECHA' },
+          { data:'QA' },
+          { data:'MODULO' },
+          { data:'ESTADO' },
+          { data:'PRIORIDAD' },
+
+          {
+            data:null,
+
+            render:function(data){
+
+              if(isTrashView){
+
+                return `
+
+                  <button
+                    class="btn btn-success btn-sm"
+                    onclick="restaurarObservacion(
+                      '${data.ID_OBSERVACION}'
+                    )"
+                  >
+                    ♻
+                  </button>
+
+                `;
+              }
+
+                let botones = `
+
+                <button
+                  class="btn btn-sm btn-primary"
+                  onclick="verObservacion(
+                    '${data.ID_OBSERVACION}'
+                  )"
+                >
+                  👁
+                </button>
+
+                <button
+                  class="btn btn-warning btn-sm"
+                  onclick="editarObservacion(
+                    '${data.ID_OBSERVACION}'
+                  )"
+                >
+                  ✏
+                </button>
+
+              `;
+
+              // =====================
+              // SIN DEV
+              // =====================
+
+              if(
+
+                !data.DEV_ASIGNADO ||
+
+                String(
+                  data.DEV_ASIGNADO
+                )
+                .trim() === ""
+
+              ){
+
+                botones += `
+
+                  <button
+                    class="btn btn-danger btn-sm"
+                    onclick="eliminarObservacion(
+                      '${data.ID_OBSERVACION}'
+                    )"
+                  >
+                    🗑
+                  </button>
+
+                `;
+              }
+
+              // =====================
+              // CON DEV
+              // =====================
+
+              else{
+
+                botones += `
+
+                  <button
+                    class="btn btn-info btn-sm"
+                    onclick="abrirComentarios(
+                      '${data.ID_OBSERVACION}'
+                    )"
+                  >
+                    💬
+                  </button>
+
+                `;
+              }
+
+              return botones;
+            }
+          }
+        ]
+
+      });
+
+    })
+
+    .withFailureHandler(err => {
+
+      console.error(err);
+
+      Swal.fire({
+        icon:'error',
+        title:'Error',
+        text:err.message
+      });
+
+    })
+
+    .obtenerObservaciones(
+      user,
+      filters
+    );
+  } 
+}
+
+</script>
+
+<script>
+function verObservacion(id){
+
+  showLoading(
+    "Cargando observación..."
+  );
+  
+  console.log(
+     typeof google.script.run.getObservacionById
+  );
+
+  document.body.style.paddingRight ="0px";  
+
+  google.script.run
+
+    .withSuccessHandler(function(obs){
+      
+      console.log(obs);
+
+      let imageUrl = "";
+
+      if(obs.CAPTURAS){
+
+        const match =
+          obs.CAPTURAS.match(
+            /\/d\/(.*?)\//
+          );
+
+        if(match){
+
+          const fileId = match[1];
+
+          imageUrl =
+            "https://lh3.googleusercontent.com/d/" +
+            fileId;
+        }
+      }
+
+    document.getElementById(
+      "detalleObservacion"
+    ).innerHTML = `
+
+    <div class="container-fluid">
+
+      <div class="row">
+
+        <!-- IMAGEN -->
+        <div class="col-md-4 text-center">
+
+          ${
+            imageUrl
+
+            ?
+
+            `<img
+              src="${imageUrl}"
+              class="img-fluid rounded border shadow-sm"
+              style="
+                max-height:500px;
+                object-fit:contain;
+              "
+            >`
+
+            :
+
+            `<div class="text-muted">
+              Sin imagen
+            </div>`
+          }
+
+        </div>
+
+        <!-- TEXTO -->
+        <div class="col-md-8">
+
+          <h5 class="mb-3">
+            ${obs.ID_OBSERVACION}
+          </h5>
+
+          <div class="mb-2">
+            <b>QA:</b>
+            ${obs.QA || ""}
+          </div>
+
+          <div class="mb-2">
+            <b>Módulo:</b>
+            ${obs.MODULO || ""}
+          </div>
+
+          <div class="mb-2">
+            <b>Estado:</b>
+            ${obs.ESTADO || ""}
+          </div>
+
+          <div class="mb-2">
+            <b>Prioridad:</b>
+            ${obs.PRIORIDAD || ""}
+          </div>
+
+          <hr>
+
+          <div class="mb-3">
+
+            <label class="fw-bold">
+              Descripción
+            </label>
+
+            <div class="border rounded p-2 bg-light">
+
+              ${(obs.DESCRIPCION_CORTA || "")
+                .replace(/\n/g,"<br>")}
+
+            </div>
+
+          </div>
+
+          <div>
+
+            <label class="fw-bold">
+              Pasos
+            </label>
+
+            <div class="border rounded p-2 bg-light">
+
+              ${(obs.PASOS_REPRODUCIR || "")
+                .replace(/\n/g,"<br>")}
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+    `;
+
+      hideLoading();
+
+      bootstrap.Modal
+      .getOrCreateInstance(
+
+        document.getElementById(
+          "modalObservacion"
+        )
+
+      )
+      .show();
+
+
+    })
+  .getObservacionById(id);
+  
+}
+
+</script>
+
+<script>
+
+function previewInforme(){
+
+  // =========================
+  // IDS
+  // =========================
+
+  const ids =
+
+    Array.from(
+
+      document.querySelectorAll(
+        ".chkObs:checked"
+      )
+
+    )
+
+    .map(x => x.value);
+
+  // =========================
+  // VALIDAR
+  // =========================
+
+  if(ids.length === 0){
+
+    Swal.fire({
+
+      icon:'warning',
+
+      title:'Seleccione observaciones'
+    });
+
+    return;
+  }
+
+  // =========================
+  // LOADING
+  // =========================
+
+  showLoading(
+    "Generando preview..."
+  );
+
+  // =========================
+  // BACKEND
+  // =========================
+
+  google.script.run
+
+    .withSuccessHandler(html => {
+
+      hideLoading();
+
+      // =========================
+      // MODAL PREVIEW
+      // =========================
+
+      Swal.fire({
+
+        title:'Preview Informe',
+
+        width:'90%',
+
+        html:`
+
+          <div
+            style="
+              max-height:70vh;
+              overflow:auto;
+              text-align:left;
+            "
+          >
+
+            ${html}
+
+          </div>
+        `,
+
+        showCloseButton:true,
+
+        showConfirmButton:true,
+
+        confirmButtonText:
+          'Descargar PDF'
+
+      }).then(result => {
+
+        if(result.isConfirmed){
+
+          generarPDFLib(ids);
+        }
+      });
+
+    })
+
+    .withFailureHandler(err => {
+
+      hideLoading();
+
+      console.error(err);
+
+      Swal.fire({
+
+        icon:'error',
+
+        title:'Error',
+
+        text:err.message
+      });
+
+    })
+
+    .generarPreviewInforme(ids);
+}
+
+</script>
+
+
+<script>
+
+function descargarPDF(ids){
+
+  showLoading(
+    "Generando PDF..."
+  );
+
+  google.script.run
+
+    .withSuccessHandler(res => {
+
+      hideLoading();
+
+      // =========================
+      // BASE64 -> BLOB
+      // =========================
+
+      const bytes =
+
+        atob(res.base64);
+
+      const array =
+
+        new Uint8Array(
+          bytes.length
+        );
+
+      for(
+
+        let i = 0;
+
+        i < bytes.length;
+
+        i++
+
+      ){
+
+        array[i] =
+          bytes.charCodeAt(i);
+      }
+
+      // =========================
+      // PDF BLOB
+      // =========================
+
+      const blob =
+
+        new Blob(
+
+          [array],
+
+          {
+            type:'application/pdf'
+          }
+        );
+
+      // =========================
+      // URL
+      // =========================
+
+      const url =
+
+        URL.createObjectURL(
+          blob
+        );
+
+      // =========================
+      // DOWNLOAD
+      // =========================
+
+      const a =
+        document.createElement(
+          'a'
+        );
+
+      a.href =
+        url;
+
+      a.download =
+        res.nombre;
+
+      document.body
+        .appendChild(a);
+
+      a.click();
+
+      a.remove();
+
+      URL.revokeObjectURL(
+        url
+      );
+
+      // =========================
+      // SUCCESS
+      // =========================
+
+      Swal.fire({
+
+        icon:'success',
+
+        title:'PDF generado'
+      });
+
+    })
+
+    .withFailureHandler(err => {
+
+      hideLoading();
+
+      console.error(err);
+
+      Swal.fire({
+
+        icon:'error',
+
+        title:'Error PDF',
+
+        text:err.message
+      });
+
+    })
+
+    .generarPDF(ids);
+}
+
+</script>
+
+
+
+<script>
+
+function editarObservacion(id){
+
+  const obs = window.dataObservaciones.find(
+
+    x =>
+
+      String(x.ID_OBSERVACION) ===
+      String(id)
+
+  );
+
+  if(!obs){
+    console.error(
+      "No se encontró la observación"
+    );
+    return;
+  }
+
+  showLoading(
+    "Cargando observación..."
+  );
+
+  //======================
+  //Edicion de lider dev
+  //=======================
+  const rolActivo =
+    document
+      .getElementById(
+        "cmbRoles"
+      )
+      .value;
+
+  window.obsTemporal =
+    obs;
+
+  google.script.run
+
+    .withSuccessHandler( async html => {
+      
+      renderView(html);
+
+      cargarDatosObservacion(
+        window.obsTemporal
+      );
+
+      aplicarPermisosEdicion(
+        rolActivo,
+        window.obsTemporal
+      );
+
+      await cargarDevs();
+
+      document
+      .getElementById(
+        "obsDevAsignado"
+      )
+      .value =
+        obs.DEV_ASIGNADO || "";
+        
+      hideLoading();
+
+    })
+
+    .getView(
+      "view_observacion_editar"
+    );
+}
+
+</script>
+
+<script>
+function aplicarPermisosEdicion(
+  rolActivo,
+  obs
+){
+
+  // ====================
+  // LIDER DEV
+  // ====================
+
+  if(
+    rolActivo === "LIDER_DEV"
+  ){
+
+    document
+      .getElementById(
+        "seccionAsignacionDev"
+      )
+      .classList
+      .remove("d-none");
+
+    bloquearCamposLider();
+    return;
+  }
+
+  // ====================
+  // LIDER QA
+  // ====================
+
+  if(
+    rolActivo === "LIDER_QA"
+  ){
+
+    document
+      .getElementById(
+        "seccionAsignacionDev"
+      )
+      .classList
+      .remove("d-none");
+
+
+    bloquearCamposLider();
+
+    return;
+  }
+
+
+  // ====================
+  // QA
+  // ====================
+
+  if(
+    rolActivo === "QA"
+  ){
+
+    document
+      .getElementById(
+        "seccionAsignacionDev"
+      )
+      .classList
+      .add("d-none");
+
+    return;
+  }
+
+  // ====================
+  // DEV
+  // ====================
+
+  if(
+    rolActivo === "DEV"
+  ){
+
+    document
+      .getElementById(
+        "seccionAsignacionDev"
+      )
+      .classList
+      .add("d-none");
+
+    return;
+  }
+
+}
+</script>
+
+<script>
+function bloquearCamposLider(){
+
+  document
+    .getElementById(
+      "obsModuloEdit"
+    )
+    .readOnly = true;
+
+  document
+    .getElementById(
+      "obsDescEdit"
+    )
+    .readOnly = true;
+
+  document
+    .getElementById(
+      "obsPasosEdit"
+    )
+    .readOnly = true;
+
+}
+</script>
+
+<script>
+function restaurarObservacion(id){
+
+  Swal.fire({
+    title: '¿Restaurar observación?',
+    text: `Se restaurará la observación ${id}`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, restaurar',
+    cancelButtonText: 'Cancelar'
+  })
+  .then(result => {
+
+    if(!result.isConfirmed){
+      return;
+    }
+
+    showLoading(
+      "Restaurando observación..."
+    );
+
+    google.script.run
+
+      .withSuccessHandler(() => {
+
+        hideLoading();
+
+        cargarTablaObservaciones({
+          view:"ELIMINADAS"
+        });
+
+        Swal.fire({
+          icon:'success',
+          title:'Restaurada',
+          text:'La observación fue restaurada correctamente.',
+          showConfirmButton:false,
+          timer:2000,
+          timerProgressBar:true
+        });
+
+      })
+
+      .withFailureHandler(error => {
+
+        hideLoading();
+
+        Swal.fire({
+          icon:'error',
+          title:'Error',
+          text:error.message || String(error),
+          showConfirmButton:false,
+          timer:3000,
+          timerProgressBar:true
+        });
+
+      })
+
+      .OBS_SERVICE_restore(id);
+
+  });
+}
+</script>
+
+<script>
+function limpiarBootstrapModal(){
+
+  document.body.style.paddingRight = "";
+
+}
+
+</script>
+
+//<script>
+//setInterval(() => {
+//
+//  const padding =
+//    getComputedStyle(
+//      document.body
+//    ).paddingRight;
+//
+//  document.body.style.paddingRight =
+//          "0px";
+//          
+//  console.log(
+//    "BODY PADDING:",
+//    padding
+//  );
+//
+//}, 1000);
+//</script>
+
+script_informes.html
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+  </head>
+  <body>
+    
+  </body>
+</html>
+script_main.html
+<script>
+
+console.log("script_main cargado");
+
+function doLogin() {
+
+  const nombre =
+    document.getElementById("txtUser").value;
+  
+  showLoading(
+    "Ingresando..."
+  );
+
+  google.script.run
+    .withSuccessHandler(res => {
+      
+      hideLoading();
+      
+      if (!res.ok) {
+
+        hideLoading();
+
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: res.message
+        });
+
+        return;
+      }
+
+      window.currentUser = res.user;
+
+      window.currentRole =   
+        res.user.rol;
+
+      CURRENT_USER = res.user;
+
+
+      document
+        .getElementById("sidebar")
+        .classList.remove("d-none");
+
+      loadDashboard();
+
+      document
+        .getElementById("navbarUser")
+        .classList.remove("d-none");
+
+      document
+        .getElementById("txtNavbarUser")
+        .innerText = res.user.nombre;
+
+      cargarRolesNavbar(res.user);
+
+    })
+    .login(nombre);
+}
+
+
+</script>
+
+
+<script>
+
+function logout() {
+
+  showLoading(
+    "Cerrando sesión..."
+  );
+
+  google.script.run
+    .withSuccessHandler(() => {
+
+      hideLoading();
+      
+      CURRENT_USER = null;
+      localStorage.removeItem("USER");
+      // ocultar sidebar
+      document
+        .getElementById("sidebar")
+        .classList.add("d-none");
+
+      // ocultar navbar user
+      document
+        .getElementById("navbarUser")
+        .classList.add("d-none");
+
+      // limpiar usuario navbar
+      document
+        .getElementById("txtNavbarUser")
+        .innerText = "";
+
+      // cargar login
+      google.script.run
+        .withSuccessHandler(html => {
+
+          renderView(html);
+
+          setTimeout(() => {
+
+            cargarUsuariosLogin();
+
+          }, 100);
+
+        })
+        .getView('view_login');
+
+    })
+    .logout();
+}
+
+</script>
+
+
+<script>
+
+function renderView(html) {
+
+  document
+    .getElementById("app")
+    .innerHTML = html;
+}
+
+</script>
+
+<script>
+
+function loadDashboard(
+  filters = {}
+){
+
+  showLoading(
+    "Cargando dashboard..."
+  );
+
+  google.script.run
+
+    .withSuccessHandler(html => {
+
+      renderView(html);
+
+
+    cargarTablaObservaciones(
+      filters
+    );
+    
+      
+      hideLoading();
+    })
+
+    .withFailureHandler(err => {
+
+      hideLoading();
+
+      console.error(err);
+
+      Swal.fire({
+
+        icon:'error',
+
+        title:'Error',
+
+        text:err.message
+      });
+    })
+
+    .getView(
+      "view_dashboard"
+    );
+
+}
+
+
+function loadObservaciones(){
+
+  showLoading(
+    "Cargando formulario..."
+  );
+
+  google.script.run
+
+    .withSuccessHandler(html => {
+
+
+      const categoria =
+        $("#DshCategoria").val();
+        
+      renderView(html);
+
+        if(categoria === "TAREA"){
+
+          setTimeout(() => {
+
+            $("#tituloObservacion")
+              .text("Nueva Tarea");
+
+            $("#guardaNuevosRegistros")
+
+              .text("Guardar Tarea")
+
+              .attr(
+                "onclick",
+                "guardarTarea()"
+              );
+
+              
+            $("#btnObservacionVolver")
+
+              .attr(
+                "onclick",
+                "loadDashboard({view:'TAREAS'})"
+              );
+
+
+          },100);
+
+        }
+
+
+      hideLoading();
+    })
+
+    .withFailureHandler(err => {
+
+      hideLoading();
+
+      console.error(err);
+
+      Swal.fire({
+
+        icon:'error',
+
+        title:'Error',
+
+        text:err.message
+      });
+    })
+
+    .getView(
+      "view_observaciones"
+    );
+}
+
+</script>
+
+<script>
+
+function cargarUsuariosLogin() {
+
+  
+  Swal.fire({
+
+    title: 'Cargando usuarios...',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    showConfirmButton: false,
+
+    didOpen: () => {
+
+      Swal.showLoading();
+    }
+  });
+
+  google.script.run
+    .withSuccessHandler(users => {
+      Swal.close();
+      const select =
+        document.getElementById(
+          "txtUser"
+        );
+
+      select.innerHTML =
+        `<option value="">
+          Seleccionar usuario
+        </option>`;
+
+      users.forEach(user => {
+
+        select.innerHTML += `
+
+          <option value="${user.nombre}">
+
+            ${user.nombre}
+            (${user.rol})
+
+          </option>
+
+        `;
+      });
+
+      $('#txtUser').select2({
+
+        width:'100%',
+
+        placeholder:'Buscar usuario',
+
+        allowClear:true
+
+      });
+
+    })
+    .obtenerUsuariosActivos();
+}
+
+</script>
+
+<script>
+
+function cargarRolesNavbar(user){
+
+  const cmb =
+    document.getElementById(
+      "cmbRoles"
+    );
+
+  cmb.innerHTML = "";
+
+  // =========================
+  // ROLES
+  // =========================
+
+  const roles =
+    String(user.roles || "")
+      .split(";");
+
+  roles.forEach(rol => {
+
+    rol = rol.trim();
+
+    cmb.innerHTML += `
+
+      <option value="${rol}">
+
+        ${rol}
+
+      </option>
+
+    `;
+  });
+
+  // =========================
+  // ROL ACTUAL
+  // =========================
+
+  cmb.value =
+  String(user.rol)
+    .trim();
+
+  window.currentRole =
+    cmb.value;
+  
+
+  // =========================
+  // CAMBIO
+  // =========================
+
+  cmb.onchange = () => {
+    
+    window.currentRole =
+      cmb.value;
+
+    console.log(
+      "ROL:",
+      window.currentRole
+    );
+
+    // RECARGAR TABLA
+    
+    actualizarPermisosUI(
+      window.currentRole
+    );
+    
+    cargarTablaObservaciones();
+  };
+  
+}
+
+</script>
+
+<script>
+
+function actualizarPermisosUI(rol){
+
+  const btn =
+    document.getElementById(
+      "btnNuevaObservacion"
+    );
+
+  // =========================
+  // SI NO EXISTE
+  // =========================
+
+  if(!btn){
+    return;
+  }
+
+  // =========================
+  // SOLO QA
+  // =========================
+
+  if(rol === "QA"){
+
+    btn.classList.remove(
+      "d-none"
+    );
+
+  }else{
+
+    btn.classList.add(
+      "d-none"
+    );
+  }
+}
+
+</script>
+
+<script>
+
+window.onload = () => {
+  
+
+  cargarUsuariosLogin();
+
+};
+
+</script>
+
+<script>
+
+function showLoading(
+  text = "Cargando..."
+){
+
+  Swal.fire({
+
+    title:text,
+
+    allowOutsideClick:false,
+
+    allowEscapeKey:false,
+
+    showConfirmButton:false,
+
+    didOpen:()=>{
+
+      Swal.showLoading();
+    }
+  });
+}
+
+function hideLoading(){
+
+  Swal.close();
+}
+
+</script>
+
+
+<script>
+
+function runServer(fnName, ...args){
+
+  return new Promise((resolve, reject) => {
+
+    google.script.run
+
+      .withSuccessHandler(resolve)
+
+      .withFailureHandler(reject)
+
+      [fnName](...args);
+
+  });
+}
+</script>
+script_observaciones.html
+<script>
+
+console.log("script_observaciones cargado");
+
+let IMAGE_BASE64 = "";
+
+/* =========================
+   PREVIEW + COMPRESION
+========================= */
+
+document.addEventListener(
+  "change",
+  async function(e){
+
+    if(e.target.id !== "obsImagen"){
+      return;
+    }
+
+    const file = e.target.files[0];
+
+    if(!file){
+      return;
+    }
+
+    const compressed =
+      await compressImage(file);
+
+    IMAGE_BASE64 = compressed;
+
+    document
+      .getElementById("previewImagen")
+      .src = compressed;
+
+    document
+      .getElementById("previewImagen")
+      .style.display = "block";
+  }
+);
+
+/* =========================
+   COMPRESS IMAGE
+========================= */
+
+function compressImage(file){
+
+  return new Promise((resolve)=>{
+
+    const reader = new FileReader();
+
+    reader.readAsDataURL(file);
+
+    reader.onload = function(event){
+
+      const img = new Image();
+
+      img.src = event.target.result;
+
+      img.onload = function(){
+
+        const canvas =
+          document.createElement("canvas");
+
+        const MAX_WIDTH = 1200;
+
+        let width = img.width;
+        let height = img.height;
+
+        if(width > MAX_WIDTH){
+
+          height *= MAX_WIDTH / width;
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx =
+          canvas.getContext("2d");
+
+        ctx.drawImage(
+          img,
+          0,
+          0,
+          width,
+          height
+        );
+
+        // calidad 0.5 = muy liviano
+        const compressed =
+          canvas.toDataURL(
+            "image/jpeg",
+            0.5
+          );
+
+        resolve(compressed);
+      };
+    };
+  });
+}
+
+/* =========================
+   GUARDAR
+========================= */
+
+function guardarObservacion(){
+
+  const payload = {
+
+    qa:
+      document
+      .getElementById("txtNavbarUser").innerText,
+
+    Modulo:
+      document
+        .getElementById("obsModulo")
+        .value,
+
+    Descripcion:
+      document
+        .getElementById("obsDesc")
+        .value,
+
+    Pasos:
+      document
+        .getElementById("obsPasos")
+        .value,
+
+    Prioridad:
+      document
+        .getElementById("obsPrioridad")
+        .value,
+
+    Imagen:
+      IMAGE_BASE64
+  };
+  
+  console.log("usuario",payload.qa)
+
+  Swal.fire({
+    title: 'Guardando...',
+    allowOutsideClick: false,
+    didOpen: () => {
+      Swal.showLoading();
+    }
+  });
+
+  google.script.run
+    .withSuccessHandler(res => {
+
+      Swal.fire({
+        icon:'success',
+        title:'Observación creada',
+        text:res.id
+      });
+
+      loadDashboard();
+
+    })
+    .withFailureHandler(err => {
+
+      Swal.fire({
+        icon:'error',
+        title:'Error',
+        text:err.message
+      });
+
+    })
+    .crearObservacion(payload);
+}
+
+</script>
+
+<script>
+
+function cargarDatosObservacion(obs){
+
+  window.obsActual = obs;
+
+  document.getElementById(
+    "obsId"
+  ).value =
+    obs.ID_OBSERVACION;
+
+  document.getElementById(
+    "obsModuloEdit"
+  ).value =
+    obs.MODULO || "";
+
+  document.getElementById(
+    "obsDescEdit"
+  ).value =
+    obs.DESCRIPCION_CORTA || "";
+
+  document.getElementById(
+    "obsPasosEdit"
+  ).value =
+    obs.PASOS_REPRODUCIR || "";
+
+  document.getElementById(
+    "obsPrioridadEdit"
+  ).value =
+    obs.PRIORIDAD || "MEDIA";
+
+
+  console.log(
+    "script_observaciones cargado"
+  );
+  
+  // =========================
+  // IMAGEN
+  // =========================
+
+  if(obs.CAPTURAS){
+
+    const match =
+      obs.CAPTURAS.match(
+        /[-\w]{25,}/
+      );
+
+    if(match){
+
+      const fileId =
+        match[0];
+
+      document.getElementById(
+        "previewImagenEdit"
+      ).src =
+
+        "https://lh3.googleusercontent.com/d/" +
+            fileId;
+
+      document.getElementById(
+        "previewImagenEdit"
+      ).style.display =
+        "block";
+
+      document.getElementById(
+        "sinImagenEdit"
+      ).style.display =
+        "none";
+
+      document.getElementById(
+        "contenedorUploadEdit"
+      ).style.display =
+        "none";
+
+      document.getElementById(
+        "mensajeImagenBloqueada"
+      ).classList.remove(
+        "d-none"
+      );
+    }
+
+  }else{
+
+    document
+      .getElementById(
+        "obsImagenEdit"
+      )
+
+      .addEventListener(
+        "change",
+
+        e => {
+
+          const file =
+            e.target.files[0];
+
+          if(!file){
+            return;
+          }
+
+          const reader =
+            new FileReader();
+
+          reader.onload =
+            ev => {
+
+              document.getElementById(
+                "previewImagenEdit"
+              ).src =
+                ev.target.result;
+
+              document.getElementById(
+                "previewImagenEdit"
+              ).style.display =
+                "block";
+
+              document.getElementById(
+                "sinImagenEdit"
+              ).style.display =
+                "none";
+            };
+
+          reader.readAsDataURL(
+            file
+          );
+        }
+      );
+  }
+
+}
+
+</script>
+
+
+<script>
+async function guardarEdicionObservacion(){
+
+  const rolActivo =
+    document
+      .getElementById(
+        "cmbRoles"
+      )
+      .value;
+
+  try{
+
+    showLoading(
+      "Guardando..."
+    );
+
+    // =====================
+    // LIDERES
+    // =====================
+
+    if(
+
+      rolActivo === "LIDER_DEV" ||
+      rolActivo === "LIDER_QA"
+
+    ){
+
+      await runServer(
+
+        "OBS_SERVICE_assignDev",
+
+        {
+
+          id:
+            document
+              .getElementById(
+                "obsId"
+              )
+              .value,
+
+          devAsignado:
+            document
+              .getElementById(
+                "obsDevAsignado"
+              )
+              .value,
+
+          prioridad:
+            document
+              .getElementById(
+                "obsPrioridadEdit"
+              )
+              .value
+
+        }
+
+      );
+
+      await loadDashboard();
+
+      Swal.fire({
+
+        icon:"success",
+
+        title:"Asignación guardada",
+
+        timer:1500,
+
+        showConfirmButton:false
+
+      });
+
+      return;
+    }
+
+    // =====================
+    // QA
+    // =====================
+
+    const payload = {
+
+      id:
+        document
+          .getElementById(
+            "obsId"
+          )
+          .value,
+
+      modulo:
+        document
+          .getElementById(
+            "obsModuloEdit"
+          )
+          .value,
+
+      descripcion:
+        document
+          .getElementById(
+            "obsDescEdit"
+          )
+          .value,
+
+      pasos:
+        document
+          .getElementById(
+            "obsPasosEdit"
+          )
+          .value,
+
+      prioridad:
+        document
+          .getElementById(
+            "obsPrioridadEdit"
+          )
+          .value
+
+    };
+
+    await runServer(
+      "OBS_SERVICE_update",
+      payload
+    );
+
+    await loadDashboard();
+
+    Swal.fire({
+
+      icon:"success",
+
+      title:"Observación actualizada",
+
+      timer:1500,
+
+      showConfirmButton:false
+
+    });
+
+  }
+  catch(error){
+
+    console.error(error);
+
+    Swal.fire({
+
+      icon:"error",
+
+      title:"Error",
+
+      text:error.message
+
+    });
+
+  }
+  finally{
+
+    hideLoading();
+
+  }
+
+}
+
+</script>
+
+<script>
+function enviarEdicion(payload){
+
+  google.script.run
+
+    .withSuccessHandler(() => {
+
+      hideLoading();
+
+      Swal.fire({
+
+        icon:"success",
+
+        title:"Guardado",
+
+        text:"Observación actualizada"
+
+      }).then(() => {
+
+        loadDashboard();
+
+      });
+
+    })
+
+    .withFailureHandler(err => {
+
+      hideLoading();
+
+      console.error(err);
+
+      Swal.fire({
+
+        icon:"error",
+
+        title:"Error",
+
+        text:err.message
+
+      });
+
+    })
+
+    .actualizarObservacion(
+      payload
+    );
+}
+</script>
+
+<script>
+function eliminarObservacion(id){
+
+  Swal.fire({
+    title: '¿Eliminar observación?',
+    text: `Se eliminará la observación ${id}`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, eliminar',
+    cancelButtonText: 'Cancelar',
+    confirmButtonColor: '#d33'
+  })
+  .then(result => {
+
+    if(!result.isConfirmed){
+      return;
+    }
+
+    google.script.run
+
+      .withSuccessHandler(() => {
+
+        loadDashboard();
+
+        Swal.fire({
+          title: 'Eliminada',
+          text: 'La observación fue eliminada correctamente.',
+          icon: 'success',
+          showConfirmButton: false,
+          timer: 2000,
+          timerProgressBar: true
+        });
+
+      })
+
+      .withFailureHandler(error => {
+
+        Swal.fire({
+          title: 'Error',
+          text: error.message || String(error),
+          icon: 'error',
+          showConfirmButton: false,
+          timer: 3000,
+          timerProgressBar: true
+        });
+
+      })
+
+      .OBS_SERVICE_delete(id);
+
+  });
+
+}
+</script>
+
+
+<script>
+async function cargarDevs(){
+
+  const devs =
+    await runServer(
+      "USUARIOS_SERVICE_getDevs"
+    );
+
+  const cmb =
+    document.getElementById(
+      "obsDevAsignado"
+    );
+
+  cmb.innerHTML = `
+    <option value="">
+      Seleccionar DEV
+    </option>
+  `;
+
+  devs.forEach(dev => {
+
+    cmb.innerHTML += `
+
+      <option
+        value="${dev.nombre}"
+      >
+        ${dev.nombre}
+      </option>
+
+    `;
+
+  });
+
+}
+</script>
+
+<script>
+async function guardarEdicionObservacion(){
+
+  const rolActivo =
+    document
+      .getElementById(
+        "cmbRoles"
+      )
+      .value;
+
+  try{
+
+    showLoading(
+      "Guardando..."
+    );
+
+    // =====================
+    // LIDERES
+    // =====================
+
+    if(
+
+      rolActivo === "LIDER_DEV" ||
+      rolActivo === "LIDER_QA"
+
+    ){
+
+      await runServer(
+
+        "OBS_SERVICE_assignDev",
+
+        {
+
+          id:
+            document
+              .getElementById(
+                "obsId"
+              )
+              .value,
+
+          devAsignado:
+            document
+              .getElementById(
+                "obsDevAsignado"
+              )
+              .value,
+
+          prioridad:
+            document
+              .getElementById(
+                "obsPrioridadEdit"
+              )
+              .value
+
+        }
+
+      );
+
+      await loadDashboard();
+
+      return;
+    }
+
+    // =====================
+    // QA (flujo actual)
+    // =====================
+
+    await runServer(
+      "OBS_SERVICE_update",
+      buildPayload()
+    );
+
+    await loadDashboard();
+
+  }catch(error){
+
+    Swal.fire({
+
+      icon:'error',
+
+      title:'Error',
+
+        text:error.message
+
+    });
+
+  }finally{
+
+    hideLoading();
+
+  }
+
+}
+
+</script>
+
+<script>
+async function abrirComentarios(id){
+
+  showLoading(
+    "Cargando comentarios..."
+  );
+
+  document.body.style.paddingRight ="0px";  
+  
+  try{
+
+    const obs =
+      await obtenerRegistro(id);
+      //await obtenerObservacion(id);
+
+    console.log("tarea creada", obs)
+
+    if(!obs){
+
+      hideLoading();
+
+      return;
+    }
+
+    document
+      .getElementById(
+        "lblTituloComentarios"
+      )
+      .innerText =
+        `Observación ${obs.ID_OBSERVACION}`;
+
+    document
+      .getElementById(
+        "chatObsId"
+      )
+      .value =
+        obs.ID_OBSERVACION;
+
+    cargarInfoComentarios(
+      obs
+    );
+
+    cargarHistorialComentarios(
+      obs
+    );
+
+    document
+      .getElementById(
+        "btnVerObsChat"
+      )
+      .onclick = () => {
+
+        const tipo =
+
+          document
+            .getElementById(
+              "chatTipo"
+            )
+            .value;
+
+        if(tipo === "TAREA"){
+
+          verTarea(
+            obs.ID_OBSERVACION
+          );
+
+        }else{
+
+          verObservacion(
+            obs.ID_OBSERVACION
+          );
+
+        }
+
+      };
+
+    bootstrap.Modal
+    .getOrCreateInstance(
+
+      document.getElementById(
+        "modalComentarios"
+      )
+
+    )
+    .show();
+
+  }
+  catch(error){
+
+    console.error(error);
+
+    Swal.fire({
+
+      icon:"error",
+
+      title:"Error",
+
+      text:error.message
+
+    });
+
+  }
+  finally{
+
+    hideLoading();
+
+  }
+}
+</script>
+
+
+<script>
+function cargarHistorialComentarios(obs){
+
+  const contenedor =
+
+    document.getElementById(
+      "txtHistorialComentarios"
+    );
+
+  let comentarios = [];
+
+  try{
+
+    comentarios =
+      JSON.parse(
+        obs.COMENTARIO_JSON || "[]"
+      );
+
+  }catch(e){
+
+    comentarios = [];
+  }
+
+  let html = "";
+
+  comentarios.forEach(c => {
+
+    const color = {
+
+      QA:
+        "bg-primary-subtle",
+
+      DEV:
+        "bg-success-subtle",
+
+      LIDER_QA:
+        "bg-warning-subtle",
+
+      LIDER_DEV:
+        "bg-info-subtle",
+
+      PM:
+        "bg-secondary-subtle"
+
+    }[c.rol] || "bg-white";
+
+    let badge = "";
+
+    if(c.accion === "EN_REVISION"){
+
+      badge =
+
+        `<span
+          class="
+            badge
+            bg-warning
+            ms-2
+          "
+        >
+          EN REVISION
+        </span>`;
+    }
+
+    if(c.accion === "APROBADO"){
+
+      badge =
+
+        `<span
+          class="
+            badge
+            bg-success
+            ms-2
+          "
+        >
+          APROBADO
+        </span>`;
+    }
+
+    if(c.accion === "RECHAZADO"){
+
+      badge =
+
+        `<span
+          class="
+            badge
+            bg-danger
+            ms-2
+          "
+        >
+          RECHAZADO
+        </span>`;
+    }
+
+    html += `
+
+      <div
+        class="
+          ${color}
+          p-2
+          rounded
+          shadow-sm
+          mb-2
+        "
+      >
+
+        <div
+          class="
+            d-flex
+            justify-content-between
+            align-items-center
+            mb-1
+          "
+        >
+
+          <div>
+
+            <strong>
+              ${c.usuario}
+            </strong>
+
+            <small
+              class="text-muted"
+            >
+              (${c.rol})
+            </small>
+
+            ${badge}
+
+          </div>
+
+          <small
+            class="text-muted"
+          >
+            ${c.fecha}
+          </small>
+
+        </div>
+
+        <div
+          style="
+            white-space:pre-wrap;
+            word-break:break-word;
+            line-height:1.2;
+          "
+        >
+          ${escapeHtml(c.mensaje)}
+        </div>
+
+      </div>
+
+    `;
+  });
+
+  if(!html){
+
+    html = `
+
+      <div
+        class="
+          text-center
+          text-muted
+          mt-5
+        "
+      >
+
+        Sin comentarios
+
+      </div>
+
+    `;
+  }
+
+  contenedor.innerHTML = html;
+
+  contenedor.scrollTop =
+    contenedor.scrollHeight;
+}
+
+</script>
+
+<script>
+async function enviarComentario(){
+
+  const mensaje =
+
+    document
+      .getElementById(
+        "txtNuevoComentario"
+      )
+      .value
+      .trim();
+
+  if(!mensaje){
+
+    Swal.fire({
+
+      icon:"warning",
+
+      title:"Mensaje vacío",
+
+      text:
+        "Debe escribir un comentario.",
+
+      timer:1500,
+
+      showConfirmButton:false
+
+    });
+
+    return;
+  }
+
+  showLoading(
+    "Guardando comentario..."
+  );
+
+  try{
+
+    const usuario =
+
+      document
+        .getElementById(
+          "txtNavbarUser"
+        )
+        .innerText
+        .trim();
+
+    const rol =
+
+      document
+        .getElementById(
+          "cmbRoles"
+        )
+        .value;
+
+    const id =
+
+      document
+        .getElementById(
+          "chatObsId"
+        )
+        .value;
+
+    const obs =
+
+      await obtenerRegistro(id)
+      //await obtenerObservacion(id);
+
+    console.log ("observaciiones",obs)
+    
+    const payload = {
+
+      id,
+
+      usuario,
+
+      rol,
+
+      mensaje:
+        mensaje
+
+          .replace(/\r/g, "")
+
+          .replace(
+            /\n{3,}/g,
+            "\n\n"
+          )
+
+          .trim(),
+
+      marcarRevision:false,
+
+      aprobarCorreccion:false,
+
+      rechazarCorreccion:false
+
+    };
+
+    // =====================
+    // DEV ASIGNADO
+    // =====================
+
+    //const esDevAsignado =
+//
+    //  rol === "DEV"
+//
+    //  &&
+//
+    //  usuario ===
+    //  obs.DEV_ASIGNADO;
+
+    const esDevAsignado =
+
+      obs.DEV_ASIGNADO
+
+      ?
+
+      (
+
+        rol === "DEV"
+
+        &&
+
+        String(usuario)
+          .trim()
+          .toUpperCase()
+
+        ===
+
+        String(obs.DEV_ASIGNADO)
+          .trim()
+          .toUpperCase()
+
+      )
+
+      :
+
+      (
+
+        rol === "DEV"
+
+        &&
+
+        usuarioAsignadoEnRol(
+
+          obs,
+
+          usuario,
+
+          "DEV"
+
+        )
+
+      );
+
+    if(
+
+      esDevAsignado
+
+      &&
+
+      obs.ESTADO !==
+      "EN_REVISION"
+
+    ){
+
+      const result =
+
+        await Swal.fire({
+
+          title:
+            "¿Marcar como listo para revisión?",
+
+          text:
+            "La observación cambiará a EN_REVISION.",
+
+          icon:"question",
+
+          showCancelButton:true,
+
+          confirmButtonText:
+            "Sí",
+
+          cancelButtonText:
+            "No"
+
+        });
+
+      payload.marcarRevision =
+        result.isConfirmed;
+    }
+
+    // =====================
+    // QA / LIDERES / PM
+    // =====================
+
+    //const esQaAsignado =
+//
+    //  rol === "QA"
+//
+    //  &&
+//
+    //  usuario ===
+    //  obs.QA;
+//
+    const esQaAsignado =
+
+      rol === "QA"
+
+      &&
+
+      esQaValidador(
+        obs,
+        usuario
+      );
+      
+    const puedeValidar =
+
+      esQaAsignado
+
+      ||
+
+      [
+
+        "LIDER_QA",
+
+        "LIDER_DEV",
+
+        "PM"
+
+      ].includes(
+        rol
+      );
+
+    if(
+
+      puedeValidar
+
+      &&
+
+      obs.ESTADO ===
+      "EN_REVISION"
+
+    ){
+
+      const result =
+
+        await Swal.fire({
+
+          title:
+            "Validación",
+
+          text:
+            "¿Aceptar o rechazar la corrección?",
+
+          icon:"question",
+
+          showDenyButton:true,
+
+          showCancelButton:true,
+
+          confirmButtonText:
+            "Aceptar",
+
+          denyButtonText:
+            "Rechazar",
+
+          cancelButtonText:
+            "Solo comentar"
+
+        });
+
+      if(
+        result.isConfirmed
+      ){
+
+        payload.aprobarCorreccion =
+          true;
+      }
+
+      else if(
+        result.isDenied
+      ){
+
+        payload.rechazarCorreccion =
+          true;
+      }
+    }
+
+    const tipo =
+
+      document
+        .getElementById(
+          "chatTipo"
+        )
+        .value;
+
+    await runServer(
+
+      tipo === "TAREA"
+
+      ?
+
+      "TASK_SERVICE_addComment"
+
+      :
+
+      "OBS_SERVICE_addComment",
+
+      payload
+
+    );
+
+
+    //await runServer(
+
+      //"OBS_SERVICE_addComment",
+
+      //payload
+
+    //);
+
+    showLoading(
+      "Actualizando historial..."
+    );
+
+    const obsActualizada =
+
+      await obtenerRegistro(id);
+      //await obtenerObservacion(id);
+
+    console.log("observaciones actualizado: ",obsActualizada)
+
+    document
+      .getElementById(
+        "txtNuevoComentario"
+      )
+      .value = "";
+
+    
+    cargarInfoComentarios(
+      obsActualizada
+    );
+
+    cargarHistorialComentarios(
+      obsActualizada
+    );
+
+    Swal.fire({
+
+      icon:"success",
+
+      title:
+        "Comentario guardado",
+
+      timer:1200,
+
+      showConfirmButton:false
+
+    });
+
+  }
+  catch(error){
+
+    console.error(error);
+
+    Swal.fire({
+
+      icon:"error",
+
+      title:"Error",
+
+      text:error.message
+
+    });
+
+  }
+  finally{
+
+    hideLoading();
+
+  }
+}
+</script>
+
+
+<script>
+function obtenerObservacion(id){
+
+  return new Promise(
+
+    (resolve, reject) => {
+
+      google.script.run
+
+        .withSuccessHandler(
+          resolve
+        )
+
+        .withFailureHandler(
+          reject
+        )
+
+        .getObservacionById(
+          id
+        );
+
+    }
+
+  );
+}
+</script>
+
+<script>
+function escapeHtml(text){
+
+  const div =
+    document.createElement(
+      "div"
+    );
+
+  div.innerText =
+    text;
+
+  return div.innerHTML;
+}
+</script>
+
+<script>
+function cargarInfoComentarios(obs){
+
+  document
+    .getElementById(
+      "lblInfoComentarios"
+    )
+  
+    .innerHTML = `
+
+      <b>QA:</b>
+      ${obs.QA}
+
+      <br>
+
+      <b>Estado:</b>
+      ${obs.ESTADO}
+
+    `;
+}
+</script>
+
+
+
+<script>
+
+function obtenerRegistro(id){
+
+  const tipo =
+
+    document
+      .getElementById(
+        "chatTipo"
+      )
+      .value;
+
+  return new Promise(
+
+    (resolve,reject) => {
+
+      const runner =
+
+        google.script.run
+
+          .withSuccessHandler(
+            resolve
+          )
+
+          .withFailureHandler(
+            reject
+          );
+
+      if(tipo === "TAREA"){
+
+        runner.getTareaById(id);
+
+      }else{
+
+        runner.getObservacionById(id);
+
+      }
+
+    }
+
+  );
+
+}
+</script>
+
+<script>
+function usuarioAsignadoEnRol(
+  obs,
+  nombre,
+  rol
+){
+
+  try{
+
+    const asignados =
+
+      JSON.parse(
+        obs.USUARIOS_ASIGNADOS || "{}"
+      );
+
+    return (
+
+      asignados[rol] || []
+
+    ).some(usuario =>
+
+      String(usuario)
+        .trim()
+        .toUpperCase()
+
+      ===
+
+      String(nombre)
+        .trim()
+        .toUpperCase()
+
+    );
+
+  }
+  catch(error){
+
+    return false;
+
+  }
+
+}
+</script>
+
+<script>
+function esQaValidador(
+  obs,
+  usuario
+){
+
+  const qas = [];
+
+  // =====================
+  // QA CREADOR
+  // =====================
+
+  if(obs.QA){
+
+    qas.push(
+      String(obs.QA)
+        .trim()
+        .toUpperCase()
+    );
+
+  }
+
+  // =====================
+  // QA ASIGNADOS
+  // =====================
+
+  try{
+
+    const asignados =
+
+      JSON.parse(
+        obs.USUARIOS_ASIGNADOS || "{}"
+      );
+
+    (asignados.QA || [])
+
+      .forEach(nombre => {
+
+        qas.push(
+
+          String(nombre)
+            .trim()
+            .toUpperCase()
+
+        );
+
+      });
+
+  }
+  catch(error){
+
+    console.error(error);
+
+  }
+
+  return qas.includes(
+
+    String(usuario)
+      .trim()
+      .toUpperCase()
+
+  );
+
+}
+</script>
+script_tareas.html
+<script>
+
+console.log("script_tareas cargado");
+
+function guardarTarea(){
+
+
+
+  const payload = {
+
+    creadoPor:
+      document
+        .getElementById("txtNavbarUser")
+        .innerText,
+
+    Modulo:
+      document
+        .getElementById("obsModulo")
+        .value,
+
+    Descripcion:
+      document
+        .getElementById("obsDesc")
+        .value,
+
+    Pasos:
+      document
+        .getElementById("obsPasos")
+        .value,
+
+    Prioridad:
+      document
+        .getElementById("obsPrioridad")
+        .value,
+
+    Imagen:
+      IMAGE_BASE64
+  };
+
+  Swal.fire({
+
+    title:'Guardando...',
+
+    allowOutsideClick:false,
+
+    didOpen:()=>{
+
+      Swal.showLoading();
+    }
+  });
+
+  google.script.run
+
+    .withSuccessHandler(res => {
+
+      Swal.fire({
+
+        icon:'success',
+
+        title:'Tarea creada',
+
+        text:res.id
+      });
+
+      loadDashboard({
+        view:'TAREAS'
+      });
+
+    })
+
+    .withFailureHandler(err => {
+
+      Swal.fire({
+
+        icon:'error',
+
+        title:'Error',
+
+        text:err.message
+      });
+
+    })
+
+    .crearTarea(payload);
+}
+
+</script>
+
+<script>
+function verTarea(id){
+
+  showLoading(
+    "Cargando tarea..."
+  );
+
+  document.body.style.paddingRight =
+    "0px";
+
+  google.script.run
+
+    .withSuccessHandler(function(task){
+
+      console.log(task);
+
+      let imageUrl = "";
+
+      if(task.CAPTURAS){
+
+        const match =
+          task.CAPTURAS.match(
+            /\/d\/(.*?)\//
+          );
+
+        if(match){
+
+          const fileId =
+            match[1];
+
+          imageUrl =
+            "https://lh3.googleusercontent.com/d/" +
+            fileId;
+        }
+      }
+
+      document.getElementById(
+        "detalleObservacion"
+      ).innerHTML = `
+
+      <div class="container-fluid">
+
+        <div class="row">
+
+          <div class="col-md-4 text-center">
+
+            ${
+              imageUrl
+
+              ?
+
+              `<img
+                src="${imageUrl}"
+                class="img-fluid rounded border shadow-sm"
+                style="
+                  max-height:500px;
+                  object-fit:contain;
+                "
+              >`
+
+              :
+
+              `<div class="text-muted">
+                Sin imagen
+              </div>`
+            }
+
+          </div>
+
+          <div class="col-md-8">
+
+            <h5 class="mb-3">
+              ${task.ID_OBSERVACION}
+            </h5>
+
+            <div class="mb-2">
+              <b>Creado por:</b>
+              ${task.QA || ""}
+            </div>
+
+            <div class="mb-2">
+              <b>Asignado a:</b>
+              ${task.DEV_ASIGNADO || ""}
+            </div>
+
+            <div class="mb-2">
+              <b>Módulo:</b>
+              ${task.MODULO || ""}
+            </div>
+
+            <div class="mb-2">
+              <b>Estado:</b>
+              ${task.ESTADO || ""}
+            </div>
+
+            <div class="mb-2">
+              <b>Prioridad:</b>
+              ${task.PRIORIDAD || ""}
+            </div>
+
+            <hr>
+
+            <div class="mb-3">
+
+              <label class="fw-bold">
+                Descripción
+              </label>
+
+              <div class="border rounded p-2 bg-light">
+
+                ${(task.DESCRIPCION_CORTA || "")
+                  .replace(/\n/g,"<br>")}
+
+              </div>
+
+            </div>
+
+            <div>
+
+              <label class="fw-bold">
+                Detalle
+              </label>
+
+              <div class="border rounded p-2 bg-light">
+
+                ${(task.PASOS_REPRODUCIR || "")
+                  .replace(/\n/g,"<br>")}
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+      `;
+
+      hideLoading();
+
+      bootstrap.Modal
+        .getOrCreateInstance(
+
+          document.getElementById(
+            "modalObservacion"
+          )
+
+        )
+        .show();
+
+    })
+
+    .withFailureHandler(err => {
+
+      hideLoading();
+
+      Swal.fire({
+
+        icon:"error",
+
+        title:"Error",
+
+        text:err.message
+
+      });
+
+    })
+
+    .getTareaById(id);
+}
+</script>
+
+
+<script>
+function editarTarea(id){
+
+  const task =
+
+    window.dataObservaciones.find(
+
+      x =>
+
+        String(x.ID_OBSERVACION) ===
+        String(id)
+
+    );
+
+  if(!task){
+
+    console.error(
+      "No se encontró la tarea"
+    );
+
+    return;
+  }
+
+  showLoading(
+    "Cargando tarea..."
+  );
+
+  window.taskTemporal =
+    task;
+
+  google.script.run
+
+    .withSuccessHandler(html => {
+
+      renderView(html);
+
+      cargarDatosTarea(
+        window.taskTemporal
+      );
+
+      cargarUsuariosAsignables();
+
+      hideLoading();
+
+    })
+
+    .withFailureHandler(err => {
+
+      hideLoading();
+
+      Swal.fire({
+
+        icon:"error",
+
+        title:"Error",
+
+        text:err.message
+
+      });
+
+    })
+
+    .getView(
+      "view_tareas_editar"
+    );
+
+}
+</script>
+
+<script>  
+function cargarDatosTarea(task){
+
+  window.taskActual = task;
+
+  document.getElementById(
+    "obsId"
+  ).value =
+    task.ID_OBSERVACION;
+
+  document.getElementById(
+    "obsModuloEdit"
+  ).value =
+    task.MODULO || "";
+
+  document.getElementById(
+    "obsDescEdit"
+  ).value =
+    task.DESCRIPCION_CORTA || "";
+
+  document.getElementById(
+    "obsPasosEdit"
+  ).value =
+    task.PASOS_REPRODUCIR || "";
+
+  document.getElementById(
+    "obsPrioridadEdit"
+  ).value =
+    task.PRIORIDAD || "MEDIA";
+
+  document.getElementById(
+    "obsEstadoEdit"
+  ).value =
+    task.ESTADO || "";
+
+  // =========================
+  // ASIGNACIONES
+  // =========================
+
+  let asignaciones = {
+
+    QA: [],
+    DEV: [],
+    PM: [],
+    LIDER_QA: [],
+    LIDER_DEV: []
+
+  };
+
+  try{
+
+    if(task.USUARIOS_ASIGNADOS){
+
+      asignaciones =
+
+        JSON.parse(
+          task.USUARIOS_ASIGNADOS
+        );
+
+    }
+
+  }catch(err){
+
+    console.error(
+      "Error leyendo asignaciones",
+      err
+    );
+
+  }
+
+  window.taskAsignaciones =
+    asignaciones;
+
+  document.getElementById(
+    "taskAsignacionesJson"
+  ).value =
+
+    JSON.stringify(
+      asignaciones
+    );
+
+  console.log(
+    "Asignaciones cargadas:",
+    asignaciones
+  );
+
+  // =========================
+  // IMAGEN
+  // =========================
+
+  if(task.CAPTURAS){
+
+    const match =
+      task.CAPTURAS.match(
+        /[-\w]{25,}/
+      );
+
+    if(match){
+
+      const fileId =
+        match[0];
+
+      document.getElementById(
+        "previewImagenEdit"
+      ).src =
+
+        "https://lh3.googleusercontent.com/d/" +
+        fileId;
+
+      document.getElementById(
+        "previewImagenEdit"
+      ).style.display =
+        "block";
+
+      document.getElementById(
+        "sinImagenEdit"
+      ).style.display =
+        "none";
+
+      document.getElementById(
+        "contenedorUploadEdit"
+      ).style.display =
+        "none";
+
+      document.getElementById(
+        "mensajeImagenBloqueada"
+      ).classList.remove(
+        "d-none"
+      );
+    }
+
+  }else{
+
+    document
+      .getElementById(
+        "obsImagenEdit"
+      )
+
+      .addEventListener(
+
+        "change",
+
+        e => {
+
+          const file =
+            e.target.files[0];
+
+          if(!file){
+            return;
+          }
+
+          const reader =
+            new FileReader();
+
+          reader.onload =
+            ev => {
+
+              document.getElementById(
+                "previewImagenEdit"
+              ).src =
+                ev.target.result;
+
+              document.getElementById(
+                "previewImagenEdit"
+              ).style.display =
+                "block";
+
+              document.getElementById(
+                "sinImagenEdit"
+              ).style.display =
+                "none";
+            };
+
+          reader.readAsDataURL(
+            file
+          );
+        }
+
+      );
+  }
+
+  // =========================
+  // RESUMEN
+  // =========================
+
+  actualizarResumenAsignaciones();
+
+}
+</script>
+
+<script>
+function cargarUsuariosAsignables(){
+
+  google.script.run
+
+    .withSuccessHandler(usuarios => {
+
+      const tbody =
+
+        document.querySelector(
+          "#tblUsuariosAsignados tbody"
+        );
+
+      tbody.innerHTML = "";
+
+      usuarios.forEach(user => {
+
+        const nombre =
+          user.Nombre;
+
+        const rol =
+          String(
+            user.Rol_principal
+          ).trim();
+
+        const checked =
+          usuarioAsignado(
+            nombre,
+            rol
+          )
+
+          ?
+
+          "checked"
+
+          :
+
+          "";
+
+        tbody.innerHTML += `
+
+          <tr>
+
+            <td>
+
+              <input
+                type="checkbox"
+                class="chkAsignacion"
+
+                data-nombre="${nombre}"
+
+                data-rol="${rol}"
+
+                ${checked}
+              >
+
+            </td>
+
+            <td>
+
+              ${nombre}
+
+            </td>
+
+            <td>
+
+              ${rol}
+
+            </td>
+
+          </tr>
+
+        `;
+
+      });
+
+      inicializarEventosAsignacion();
+
+      actualizarResumenAsignaciones();
+
+    })
+
+    .withFailureHandler(err => {
+
+      console.error(err);
+
+      Swal.fire({
+
+        icon:"error",
+
+        title:"Error",
+
+        text:err.message
+
+      });
+
+    })
+
+    .obtenerUsuariosAsignables();
+
+}
+</script>
+
+<script>
+function usuarioAsignado(
+  nombre,
+  rol
+){
+
+  const data =
+    window.taskAsignaciones;
+
+  if(
+    !data ||
+    !data[rol]
+  ){
+
+    return false;
+
+  }
+
+  return data[rol].includes(
+    nombre
+  );
+
+}
+</script>
+
+<script>
+function inicializarEventosAsignacion(){
+
+  document
+
+    .querySelectorAll(
+      ".chkAsignacion"
+    )
+
+    .forEach(chk => {
+
+      chk.addEventListener(
+
+        "change",
+
+        actualizarAsignaciones
+
+      );
+
+    });
+
+}
+</script>
+
+
+<script>
+function actualizarAsignaciones(){
+
+  const asignaciones = {
+
+    QA: [],
+    DEV: [],
+    PM: [],
+    LIDER_QA: [],
+    LIDER_DEV: []
+
+  };
+
+  document
+
+    .querySelectorAll(
+      ".chkAsignacion:checked"
+    )
+
+    .forEach(chk => {
+
+      const nombre =
+        chk.dataset.nombre;
+
+      const rol =
+        chk.dataset.rol;
+
+      if(
+        asignaciones[rol]
+      ){
+
+        asignaciones[rol]
+          .push(nombre);
+
+      }
+
+    });
+
+  window.taskAsignaciones =
+    asignaciones;
+
+  document.getElementById(
+    "taskAsignacionesJson"
+  ).value =
+
+    JSON.stringify(
+      asignaciones
+    );
+
+  actualizarResumenAsignaciones();
+
+}
+</script>
+
+<script>
+function actualizarResumenAsignaciones(){
+
+  const a =
+    window.taskAsignaciones || {};
+
+  const html = `
+
+    <b>QA:</b>
+    ${(a.QA || []).join(", ") || "-"}
+
+    <br>
+
+    <b>DEV:</b>
+    ${(a.DEV || []).join(", ") || "-"}
+
+    <br>
+
+    <b>PM:</b>
+    ${(a.PM || []).join(", ") || "-"}
+
+    <br>
+
+    <b>LIDER_QA:</b>
+    ${(a.LIDER_QA || []).join(", ") || "-"}
+
+    <br>
+
+    <b>LIDER_DEV:</b>
+    ${(a.LIDER_DEV || []).join(", ") || "-"}
+
+  `;
+
+  document.getElementById(
+    "taskResumenAsignaciones"
+  ).innerHTML =
+    html;
+
+}
+</script>
+
+<script>
+function guardarEdicionTarea(){
+
+  const payload = {
+
+    ID_OBSERVACION:
+      document.getElementById(
+        "obsId"
+      ).value,
+
+    MODULO:
+      document.getElementById(
+        "obsModuloEdit"
+      ).value,
+
+    DESCRIPCION_CORTA:
+      document.getElementById(
+        "obsDescEdit"
+      ).value,
+
+    PASOS_REPRODUCIR:
+      document.getElementById(
+        "obsPasosEdit"
+      ).value,
+
+    PRIORIDAD:
+      document.getElementById(
+        "obsPrioridadEdit"
+      ).value,
+
+    USUARIOS_ASIGNADOS:
+      document.getElementById(
+        "taskAsignacionesJson"
+      ).value
+  };
+
+  Swal.fire({
+
+    title:"Guardando...",
+
+    allowOutsideClick:false,
+
+    didOpen:()=>{
+
+      Swal.showLoading();
+
+    }
+
+  });
+
+  google.script.run
+
+    .withSuccessHandler(res => {
+
+      Swal.fire({
+
+        icon:"success",
+
+        title:"Tarea actualizada"
+
+      });
+
+      loadDashboard({
+        view:"TAREAS"
+      });
+
+    })
+
+    .withFailureHandler(err => {
+
+      Swal.fire({
+
+        icon:"error",
+
+        title:"Error",
+
+        text:err.message
+
+      });
+
+    })
+
+    .guardarEdicionTarea(
+      payload
+    );
+
+}
+</script>
+
+<script>
+function eliminarTarea(id){
+
+  Swal.fire({
+
+    title: '¿Eliminar tarea?',
+
+    text: `Se eliminará la tarea ${id}`,
+
+    icon: 'warning',
+
+    showCancelButton: true,
+
+    confirmButtonText: 'Sí, eliminar',
+
+    cancelButtonText: 'Cancelar',
+
+    confirmButtonColor: '#d33'
+
+  })
+
+  .then(result => {
+
+    if(!result.isConfirmed){
+      return;
+    }
+
+    google.script.run
+
+      .withSuccessHandler(() => {
+
+        loadDashboard({
+          view:'TAREAS'
+        });
+
+        Swal.fire({
+
+          title: 'Eliminada',
+
+          text: 'La tarea fue eliminada correctamente.',
+
+          icon: 'success',
+
+          showConfirmButton: false,
+
+          timer: 2000,
+
+          timerProgressBar: true
+
+        });
+
+      })
+
+      .withFailureHandler(error => {
+
+        Swal.fire({
+
+          title: 'Error',
+
+          text: error.message || String(error),
+
+          icon: 'error',
+
+          showConfirmButton: false,
+
+          timer: 3000,
+
+          timerProgressBar: true
+
+        });
+
+      })
+
+      .TASK_SERVICE_delete(id);
+
+  });
+
+}
+</script>
+
+
+<script>
+function tareaTieneAsignados(data){
+
+  try{
+
+    const asignados =
+
+      JSON.parse(
+        data.USUARIOS_ASIGNADOS || "{}"
+      );
+
+    return Object
+      .values(asignados)
+
+      .some(arr =>
+
+        Array.isArray(arr)
+
+        &&
+
+        arr.length > 0
+      );
+
+  }
+  catch(e){
+
+    console.error(
+      "Error validando asignados",
+      e
+    );
+
+    return false;
+  }
+
+}
+</script>
+
+<script>
+function restaurarTarea(id){
+
+  Swal.fire({
+
+    title:'¿Restaurar tarea?',
+
+    text:`Se restaurará la tarea ${id}`,
+
+    icon:'question',
+
+    showCancelButton:true,
+
+    confirmButtonText:'Sí, restaurar',
+
+    cancelButtonText:'Cancelar'
+
+  })
+
+  .then(result => {
+
+    if(!result.isConfirmed){
+      return;
+    }
+
+    showLoading(
+      "Restaurando tarea..."
+    );
+
+    google.script.run
+
+      .withSuccessHandler(() => {
+
+        hideLoading();
+
+        cargarTablaObservaciones({
+
+          view:"ELIMINADAS",
+
+          categoria:"TAREA"
+
+        });
+
+        Swal.fire({
+
+          icon:'success',
+
+          title:'Restaurada',
+
+          text:'La tarea fue restaurada correctamente.',
+
+          showConfirmButton:false,
+
+          timer:2000,
+
+          timerProgressBar:true
+
+        });
+
+      })
+
+      .withFailureHandler(error => {
+
+        hideLoading();
+
+        Swal.fire({
+
+          icon:'error',
+
+          title:'Error',
+
+          text:error.message || String(error),
+
+          showConfirmButton:false,
+
+          timer:3000,
+
+          timerProgressBar:true
+
+        });
+
+      })
+
+      .TASK_SERVICE_restore(id);
+
+  });
+
+}
+</script>
+style_colors.html
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+  </head>
+  <body>
+    
+  </body>
+</html>
+style_main.html
+<style>
+
+body{
+  background:#f5f6fa;
+  overflow-x:hidden;
+}
+
+/* =========================
+   SIDEBAR
+========================= */
+
+#sidebar{
+
+  width:250px;
+  min-height:100vh;
+
+  background:#212529;
+  color:white;
+}
+
+/* =========================
+   APP
+========================= */
+
+#app{
+  min-height:100vh;
+}
+
+/* =========================
+   LOGIN
+========================= */
+
+.login-wrapper{
+
+  min-height:90vh;
+
+  display:flex;
+
+  justify-content:center;
+
+  align-items:center;
+}
+
+</style>
+
+<script>
+
+async function cargarPDFLib(){
+
+  // =========================
+  // YA CARGADO
+  // =========================
+
+  if(
+
+    typeof PDFLib !==
+    "undefined"
+
+  ){
+    return;
+  }
+
+  // =========================
+  // SCRIPT
+  // =========================
+
+  await new Promise((resolve,reject)=>{
+
+    const script =
+
+      document.createElement(
+        "script"
+      );
+
+    script.src =
+
+      "https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js";
+
+    script.onload =
+      resolve;
+
+    script.onerror =
+      reject;
+
+    document.head
+      .appendChild(script);
+  });
+}
+
+</script>
+
+<script>
+function dividirTexto(
+
+  texto,
+  maxChars = 65
+
+){
+
+  if(!texto){
+    return [];
+  }
+
+  // =========================
+  // NORMALIZAR
+  // =========================
+
+  texto =
+
+    String(texto)
+      .replace(/\r/g,'');
+
+  // =========================
+  // SPLIT SALTOS REALES
+  // =========================
+
+  const bloques =
+
+    texto.split('\n');
+
+  const resultado = [];
+
+  // =========================
+  // RECORRER BLOQUES
+  // =========================
+
+  for(
+
+    const bloque of bloques
+
+  ){
+
+    // =========================
+    // LINEA VACIA
+    // =========================
+
+    if(!bloque.trim()){
+
+      resultado.push('');
+      continue;
+    }
+
+    // =========================
+    // WRAP NORMAL
+    // =========================
+
+    const palabras =
+
+      bloque.split(' ');
+
+    let linea = '';
+
+    for(
+
+      const palabra of palabras
+
+    ){
+
+      if(
+
+        (linea + palabra).length
+        > maxChars
+
+      ){
+
+        resultado.push(
+          linea.trim()
+        );
+
+        linea =
+          palabra + ' ';
+
+      }else{
+
+        linea +=
+          palabra + ' ';
+      }
+    }
+
+    // =========================
+    // PUSH FINAL
+    // =========================
+
+    if(linea.trim()){
+
+      resultado.push(
+        linea.trim()
+      );
+    }
+  }
+
+  return resultado;
+}
+</script>
+
+
+<script>
+
+async function generarPDFLib(ids){
+
+
+  await cargarPDFLib();
+  showLoading(
+    "Generando PDF..."
+  );
+
+  
+
+  google.script.run
+
+    .withSuccessHandler(
+
+      async(data)=>{
+
+        try{
+
+          // =========================
+          // PDF DOC
+          // =========================
+
+          const pdfDoc =
+
+            await PDFLib
+              .PDFDocument
+              .create();
+
+          // =========================
+          // PAGE
+          // =========================
+
+          let page =
+
+            pdfDoc.addPage([
+              595,
+              842
+            ]);
+
+          // =========================
+          // POSICION
+          // =========================
+
+          let y = 780;
+
+          // =========================
+          // LOOP OBS
+          // =========================
+
+          const titulo =
+
+            "INFORME QA";
+
+          const tituloWidth =
+
+            titulo.length * 7;
+
+          page.drawText(
+
+            titulo,
+
+            {
+
+              x:
+                (595 / 2)
+                - (tituloWidth / 2),
+
+              y:y,
+
+              size:16
+            }
+          );
+
+          y -= 25;
+          page.drawText(
+
+            `Usuario: ${data[0]?.QA || ""}`,
+
+            {
+              x:40,
+              y:y,
+              size:14
+            }
+          );
+
+          y -= 15;
+
+          page.drawLine({
+
+            start:{
+              x:40,
+              y:y
+            },
+
+            end:{
+              x:550,
+              y:y
+            },
+
+            thickness:1
+          });
+
+          y -= 25;
+          
+          for(           
+
+            const obs of data
+
+          ){
+            // =========================
+            // BLOQUE VISUAL
+            // =========================
+
+            // =========================
+            // NUEVA PAGINA
+            // =========================
+
+            if(y < 250){
+
+              page =
+
+                pdfDoc.addPage([
+                  595,
+                  842
+                ]);
+
+              y = 780;
+            }
+
+            // =========================
+            // TITULO
+            // =========================
+
+            page.drawText(
+
+              `OBSERVACION: ${obs.ID_OBSERVACION}`,
+
+              {
+                x:40,
+                y:y,
+                size:14
+              }
+            );
+
+            y -= 25;
+
+            // =========================
+            // IMAGEN
+            // =========================
+
+            if(obs.IMAGEN_BASE64){
+
+              try{
+
+                const image =
+
+                  await pdfDoc
+                    .embedJpg(
+                      obs.IMAGEN_BASE64
+                    );
+
+                // =========================
+                // CONTENEDOR
+                // =========================
+
+                const maxWidth  = 120;
+                const maxHeight = 180;
+
+                // =========================
+                // DIMENSIONES ORIGINALES
+                // =========================
+
+                const originalWidth  = image.width;
+                const originalHeight = image.height;
+
+                // =========================
+                // ESCALA
+                // =========================
+
+                const scale = Math.min(
+
+                  maxWidth  / originalWidth,
+
+                  maxHeight / originalHeight
+                );
+
+                // =========================
+                // TAMAÑO FINAL
+                // =========================
+
+                const finalWidth  =
+                  originalWidth * scale;
+
+                const finalHeight =
+                  originalHeight * scale;
+
+                // =========================
+                // CENTRADO VERTICAL
+                // =========================
+
+                const offsetY =
+                  (maxHeight - finalHeight) / 2;
+
+                // =========================
+                // DIBUJAR CONTENEDOR
+                // =========================
+
+                // =========================
+                // IMAGEN
+                // =========================
+
+                page.drawImage(
+
+                  image,
+
+                  {
+
+                    x:40,
+
+                    y:
+                      y - 210 + offsetY,
+
+                    width:finalWidth,
+
+                    height:finalHeight
+                  }
+                );
+
+              }catch(err){
+
+                console.error(err);
+              }
+            }
+            // =========================
+            // POSICION TEXTO
+            // =========================
+
+            const textX = 170;
+
+            let textY = y;
+
+            // =========================
+            // MODULO
+            // =========================
+
+            page.drawText(
+
+              `Modulo: ${obs.MODULO || ""}`,
+
+              {
+                x:textX,
+                y:textY,
+                size:12
+              }
+            );
+
+            textY -= 25;
+
+            // =========================
+            // ESTADO
+            // =========================
+
+            page.drawText(
+
+              `Estado: ${obs.ESTADO || ""}`,
+
+              {
+                x:textX,
+                y:textY,
+                size:12
+              }
+            );
+
+            textY -= 25;
+
+            // =========================
+            // PRIORIDAD
+            // =========================
+
+            page.drawText(
+
+              `Prioridad: ${obs.PRIORIDAD || ""}`,
+
+              {
+                x:textX,
+                y:textY,
+                size:12
+              }
+            );
+
+            textY -= 35;
+
+            // =========================
+            // DESCRIPCION
+            // =========================
+
+            page.drawText(
+
+              `Descripcion:`,
+
+              {
+                x:textX,
+                y:textY,
+                size:12
+              }
+            );
+
+            textY -= 20;
+
+            // =========================
+            // TEXTO WRAP
+            // =========================
+
+            const descripcionLineas =
+
+              dividirTexto(
+
+                obs.DESCRIPCION_CORTA,
+
+                90
+              );
+
+            for(
+
+              const linea of descripcionLineas
+
+            ){
+
+              page.drawText(
+
+                linea,
+
+                {
+                  x:textX,
+                  y:textY,
+                  size:10
+                }
+              );
+
+              textY -= 14;
+            }
+
+            // =========================
+            // ESPACIO
+            // =========================
+
+            textY -= 15;
+
+            // =========================
+            // PASOS
+            // =========================
+
+            page.drawText(
+
+              `Pasos:`,
+
+              {
+                x:textX,
+                y:textY,
+                size:12
+              }
+            );
+
+            textY -= 20;
+
+            // =========================
+            // PASOS TEXTO
+            // =========================
+
+            const pasosLineas =
+
+              dividirTexto(
+
+                obs.PASOS_REPRODUCIR,
+
+                90
+              );
+
+            for(
+
+              const linea of pasosLineas
+
+            ){
+
+              page.drawText(
+
+                linea,
+
+                {
+                  x:textX,
+                  y:textY,
+                  size:10
+                }
+              );
+
+              textY -= 14;              
+            }
+
+            // =========================
+            // NUEVA POSICION GLOBAL
+            // =========================
+
+            y = Math.min(
+
+              y - 240,
+
+              textY - 40
+            );
+          }
+          // =========================
+          // SAVE PDF
+          // =========================
+
+          const pdfBytes =
+
+            await pdfDoc.save();
+
+          // =========================
+          // BLOB
+          // =========================
+
+          const blob =
+
+            new Blob(
+
+              [pdfBytes],
+
+              {
+                type:'application/pdf'
+              }
+            );
+
+          // =========================
+          // DOWNLOAD
+          // =========================
+
+          const url =
+
+            URL.createObjectURL(
+              blob
+            );
+
+          const a =
+
+            document.createElement(
+              'a'
+            );
+
+          a.href =
+            url;
+
+          const usuario =
+
+            document.getElementById(
+              "txtNavbarUser"
+            )
+
+            .innerText
+
+            .trim()
+
+            .replace(/\s+/g,"_");
+
+          const rol =
+
+            document.getElementById(
+              "cmbRoles"
+            )
+            .value;
+
+          const fecha =
+
+            new Date()
+
+              .toISOString()
+
+              .replace(/[:.]/g,"-");
+
+          a.download =
+
+            `${usuario}-${rol}-${fecha}.pdf`;
+
+          document.body
+            .appendChild(a);
+
+          a.click();
+
+          a.remove();
+
+          URL.revokeObjectURL(
+            url
+          );
+
+          hideLoading();
+
+        }catch(err){
+
+          hideLoading();
+
+          console.error(err);
+
+          Swal.fire({
+
+            icon:'error',
+
+            title:'PDF Error',
+
+            text:err.message
+          });
+        }
+      }
+    )
+
+    .withFailureHandler(err => {
+
+      hideLoading();
+
+      console.error(err);
+
+      Swal.fire({
+
+        icon:'error',
+
+        title:'Backend Error',
+
+        text:err.message
+      });
+
+    })
+
+    .obtenerDataPDF(ids);
+}
+
+</script>
+
+view_dashboard.html
+<div class="container-fluid p-4">
+
+  <div class="d-flex justify-content-between align-items-center mb-4">
+
+    <h3>
+      Dashboard QA
+    </h3>
+
+    <button
+      id="btnPreviewInforme"
+      class="btn btn-dark"
+      onclick="previewInforme()"
+    >
+
+      Vista previa informe
+
+    </button>
+    
+    <button
+      id="btnNuevaObservacion"
+      class="btn btn-primary"
+      onclick="loadObservaciones()"
+    >
+      Nueva Observación
+    </button>
+
+  </div>
+
+  <table
+    id="tblObservaciones"
+    class="table table-striped table-hover"
+    style="width:100%"
+  >
+
+    <thead>
+
+      <tr>
+        <th></th>
+        <th>ID</th>
+        <th>Fecha</th>
+        <th>QA</th>
+        <th>Módulo</th>
+        <th>Estado</th>
+        <th>Prioridad</th>
+        <th>Acciones</th>
+      </tr>
+
+    </thead>
+
+    <tbody></tbody>
+
+  </table>
+
+  
+</div>
+
+<div
+  class="modal fade"
+  id="modalComentarios"
+  tabindex="-1"
+>
+
+  <div
+    class="modal-dialog modal-lg"
+  >
+
+    <div class="modal-content">
+
+      <div class="modal-header">
+
+
+        <h5
+          id="lblTituloComentarios"
+          class="modal-title"
+        >
+          Comentarios
+        </h5>
+
+        <button
+          class="btn-close"
+          data-bs-dismiss="modal"
+        ></button>
+
+      </div>
+
+      <div class="modal-body">
+
+
+        
+        <div
+          id="lblInfoComentarios"
+          class="mb-3"
+        ></div>
+
+        <button
+          id="btnVerObsChat"
+          class="
+            btn
+            btn-primary
+            btn-sm
+            mb-3
+          "
+        >
+          👁 Ver Observación
+        </button>
+
+        <div
+          id="txtHistorialComentarios"
+          class="
+            border
+            rounded
+            p-3
+            bg-light
+            mb-3
+          "
+          style="
+            height:400px;
+            overflow-y:auto;
+          "
+        ></div>
+
+        <textarea
+          id="txtNuevoComentario"
+          class="form-control"
+          rows="4"
+          placeholder="Escriba un comentario..."
+        ></textarea>
+
+        <div
+          id="contenedorRevision"
+          class="form-check mt-3"
+        >
+
+          <input
+            type="hidden"
+            id="chatObsId"
+          >
+
+          
+          <input
+            type="hidden"
+            id="DshCategoria"
+          >
+
+          <input
+            type="hidden"
+            id="chatTipo"
+          >
+
+          <div class="d-none">
+            
+            <input
+              type="checkbox"
+              id="chkMarcarRevision"
+              class="form-check-input"
+            >
+
+            <label
+              class="form-check-label"
+            >
+              Marcar como listo para revisión
+            </label>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+
+        <button
+          class="btn btn-success"
+          onclick="enviarComentario()"
+        >
+          Enviar
+        </button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+
+<div
+  class="modal fade"
+  id="modalObservacion"
+  tabindex="-1"
+>
+
+  <div class="modal-dialog modal-xl">
+
+    <div class="modal-content">
+
+      <div class="modal-header">
+
+        <h5 class="modal-title">
+          Detalle Observación
+        </h5>
+
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+        ></button>
+
+      </div>
+
+      <div
+        class="modal-body"
+        id="detalleObservacion"
+      >
+      </div>
+
+    </div>
+
+  </div>
+</div>
+view_informes.html
+<h1>Titulo</h1>
+
+<div>
+  QA
+  Fecha
+</div>
+
+<hr>
+
+<div class="obs">
+
+  <div class="foto">
+    <img>
+  </div>
+
+  <div class="contenido">
+
+    <h3>Modulo</h3>
+
+    <p>Descripcion</p>
+
+    <p>Pasos</p>
+
+  </div>
+
+</div>
+view_login.html
+<div class="login-wrapper">
+
+  <div class="card shadow" style="width:350px;">
+
+    <div class="card-body p-4">
+
+      <h2 class="mb-4">
+        Login
+      </h2>
+
+    <div class="mb-3">
+
+      <label class="form-label">
+        Usuario
+      </label>
+
+      <select
+        id="txtUser"
+        class="form-select"
+      >
+        <option value="">
+          Seleccionar usuario
+        </option>
+      </select>
+
+    </div>
+
+      <button
+        class="btn btn-primary w-100"
+        onclick="doLogin()"
+      >
+        Ingresar
+      </button>
+
+    </div>
+
+  </div>
+
+</div>
+view_observaciones.html
+<div class="container-fluid p-4">
+
+  <div class="card shadow">
+
+    <!-- HEADER -->
+    <div class="card-header d-flex justify-content-between align-items-center">
+
+      <h4 id="tituloObservacion" class="m-0">
+        Nueva Observación
+      </h4>
+
+      <button
+        id="btnObservacionVolver"
+        class="btn btn-secondary"
+        onclick="loadDashboard()"
+      >
+        Volver
+      </button>
+
+    </div>
+
+    <!-- BODY -->
+    <div class="card-body">
+
+      <div class="row g-4">
+
+        <!-- IMAGEN -->
+        <div class="col-md-4">
+
+          <div
+            class="
+              border
+              rounded
+              p-3
+              text-center
+              bg-light
+            "
+            style="
+              min-height:500px;
+            "
+          >
+
+            <img
+              id="previewImagen"
+              class="img-fluid rounded shadow-sm"
+              style="
+                max-height:450px;
+                object-fit:contain;
+                display:none;
+              "
+            >
+
+            <div
+              id="textoPreview"
+              class="text-muted mt-5"
+            >
+              Vista previa imagen
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- FORM -->
+        <div class="col-md-8">
+
+          <!-- MODULO -->
+          <div class="mb-3">
+
+            <label class="form-label fw-bold">
+              Módulo
+            </label>
+
+            <input
+              id="obsModulo"
+              class="form-control"
+            >
+
+          </div>
+
+          <!-- DESCRIPCION -->
+          <div class="mb-3">
+
+            <label class="form-label fw-bold">
+              Descripción
+            </label>
+
+            <textarea
+              id="obsDesc"
+              class="form-control"
+              rows="5"
+            ></textarea>
+
+          </div>
+
+          <!-- PASOS -->
+          <div class="mb-3">
+
+            <label class="form-label fw-bold">
+              Pasos para reproducir
+            </label>
+
+            <textarea
+              id="obsPasos"
+              class="form-control"
+              rows="7"
+            ></textarea>
+
+          </div>
+
+          <!-- PRIORIDAD -->
+          <div class="mb-4">
+
+            <label class="form-label fw-bold">
+              Prioridad
+            </label>
+
+            <select
+              id="obsPrioridad"
+              class="form-select"
+            >
+
+              <option>
+                BAJA
+              </option>
+
+              <option selected>
+                MEDIA
+              </option>
+
+              <option>
+                ALTA
+              </option>
+
+              <option>
+                CRITICA
+              </option>
+
+            </select>
+
+          </div>
+
+          <!-- IMAGEN -->
+          <div class="mb-4">
+
+            <label class="form-label fw-bold">
+              Captura
+            </label>
+
+            <input
+              type="file"
+              id="obsImagen"
+              class="form-control"
+              accept="image/*"
+            >
+
+          </div>
+
+          <!-- BOTONES -->
+          <div class="d-flex gap-2">
+
+            <button
+              id="guardaNuevosRegistros"
+              class="btn btn-success"
+              onclick="guardarObservacion()"
+            >
+              Guardar Observación
+            </button>
+
+            <button
+              class="btn btn-outline-secondary"
+              onclick="limpiarFormularioObs()"
+            >
+              Limpiar
+            </button>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+
+document
+  .getElementById(
+    "obsImagen"
+  )
+
+  .addEventListener(
+
+    "change",
+
+    e => {
+
+      const file =
+        e.target.files[0];
+
+      if(!file){
+        return;
+      }
+
+      const reader =
+        new FileReader();
+
+      reader.onload =
+        ev => {
+
+          const img =
+
+            document.getElementById(
+              "previewImagen"
+            );
+
+          img.src =
+            ev.target.result;
+
+          img.style.display =
+            "block";
+
+          document.getElementById(
+            "textoPreview"
+          ).style.display =
+            "none";
+        };
+
+      reader.readAsDataURL(
+        file
+      );
+    }
+  );
+
+function limpiarFormularioObs(){
+
+  document.getElementById(
+    "obsModulo"
+  ).value = "";
+
+  document.getElementById(
+    "obsDesc"
+  ).value = "";
+
+  document.getElementById(
+    "obsPasos"
+  ).value = "";
+
+  document.getElementById(
+    "obsPrioridad"
+  ).value = "MEDIA";
+
+  document.getElementById(
+    "obsImagen"
+  ).value = "";
+
+  const img =
+    document.getElementById(
+      "previewImagen"
+    );
+
+  img.src = "";
+
+  img.style.display =
+    "none";
+
+  document.getElementById(
+    "textoPreview"
+  ).style.display =
+    "block";
+}
+
+</script>
+
+<script>
+async function enviarComentario(){
+
+  const mensaje =
+    document
+      .getElementById(
+        "txtNuevoComentario"
+      )
+      .value
+      .trim();
+
+  if(!mensaje){
+
+    Swal.fire({
+
+      icon:"warning",
+
+      title:"Mensaje vacío",
+
+      text:
+        "Debe escribir un comentario."
+
+    });
+
+    return;
+  }
+
+  const obs =
+    window.obsChatActual;
+
+  const usuario =
+    document
+      .getElementById(
+        "txtNavbarUser"
+      )
+      .innerText
+      .trim();
+
+  const rol =
+    document
+      .getElementById(
+        "cmbRoles"
+      )
+      .value;
+
+  const payload = {
+
+    id:
+      obs.ID_OBSERVACION,
+
+    usuario,
+
+    rol,
+
+    mensaje,
+
+    marcarRevision:false,
+
+    aprobarCorreccion:false,
+
+    rechazarCorreccion:false
+
+  };
+
+  try{
+
+    // =====================
+    // DEV ASIGNADO
+    // =====================
+
+    const esDevAsignado =
+
+      rol === "DEV"
+
+      &&
+
+      usuario ===
+      obs.DEV_ASIGNADO;
+
+    if(esDevAsignado){
+
+      const result =
+        await Swal.fire({
+
+          title:
+            "¿Marcar como listo para revisión?",
+
+          text:
+            "La observación cambiará a EN_REVISION.",
+
+          icon:"question",
+
+          showCancelButton:true,
+
+          confirmButtonText:"Sí",
+
+          cancelButtonText:"No"
+
+        });
+
+      payload.marcarRevision =
+        result.isConfirmed;
+    }
+
+    // =====================
+    // QA Y LIDERES
+    // =====================
+
+    const puedeValidar =
+
+      [
+
+        "QA",
+        "LIDER_QA",
+        "LIDER_DEV"
+
+      ].includes(
+        rol
+      );
+
+    if(
+
+      puedeValidar
+
+      &&
+
+      obs.ESTADO ===
+      "EN_REVISION"
+
+    ){
+
+      const result =
+        await Swal.fire({
+
+          title:
+            "Validación",
+
+          text:
+            "¿Aceptar o rechazar la corrección?",
+
+          icon:"question",
+
+          showDenyButton:true,
+
+          showCancelButton:true,
+
+          confirmButtonText:
+            "Aceptar",
+
+          denyButtonText:
+            "Rechazar",
+
+          cancelButtonText:
+            "Solo comentar"
+
+        });
+
+      if(
+        result.isConfirmed
+      ){
+
+        payload.aprobarCorreccion =
+          true;
+      }
+
+      else if(
+        result.isDenied
+      ){
+
+        payload.rechazarCorreccion =
+          true;
+      }
+    }
+
+    showLoading(
+      "Guardando comentario..."
+    );
+
+    await runServer(
+
+      "OBS_SERVICE_addComment",
+
+      payload
+
+    );
+
+    document
+      .getElementById(
+        "txtNuevoComentario"
+      )
+      .value = "";
+
+    abrirComentarios(
+      obs.ID_OBSERVACION
+    );
+
+    Swal.fire({
+
+      icon:"success",
+
+      title:"Comentario guardado",
+
+      timer:1500,
+
+      showConfirmButton:false
+
+    });
+
+  }
+  catch(error){
+
+    console.error(error);
+
+    Swal.fire({
+
+      icon:"error",
+
+      title:"Error",
+
+      text:error.message
+
+    });
+
+  }
+  finally{
+
+    hideLoading();
+  }
+}
+</script>
+view_validaciones.html
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+  </head>
+  <body>
+    
+  </body>
+</html>
+template_informe.html
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <base target="_top">
+
+  <style>
+
+    body{
+
+      font-family: Arial, sans-serif;
+      padding: 30px;
+      color:#222;
+    }
+
+    .titulo{
+
+      text-align:center;
+      font-size:28px;
+      font-weight:bold;
+      margin-bottom:10px;
+    }
+
+    .subtitulo{
+
+      text-align:center;
+      color:#666;
+      margin-bottom:40px;
+    }
+
+    .observacion{
+
+      display:flex;
+
+      border:1px solid #ccc;
+
+      border-radius:10px;
+
+      overflow:hidden;
+
+      margin-bottom:25px;
+
+      page-break-inside:avoid;
+    }
+
+    .foto{
+
+      width:320px;
+
+      min-width:320px;
+
+      background:#f4f4f4;
+
+      display:flex;
+
+      align-items:center;
+
+      justify-content:center;
+
+      border-right:1px solid #ddd;
+    }
+
+    .foto img{
+
+      width:100%;
+      height:auto;
+
+      object-fit:contain;
+    }
+
+    .contenido{
+
+      flex:1;
+
+      padding:20px;
+    }
+
+    .modulo{
+
+      font-size:22px;
+      font-weight:bold;
+
+      margin-bottom:10px;
+
+      color:#1d3557;
+    }
+
+    .meta{
+
+      margin-bottom:15px;
+
+      font-size:13px;
+
+      color:#666;
+    }
+
+    .bloque{
+
+      margin-bottom:18px;
+    }
+
+    .bloque-titulo{
+
+      font-weight:bold;
+
+      margin-bottom:6px;
+
+      color:#444;
+    }
+
+    .bloque-contenido{
+
+      background:#fafafa;
+
+      border:1px solid #e5e5e5;
+
+      border-radius:6px;
+
+      padding:12px;
+
+      white-space:pre-wrap;
+    }
+
+  </style>
+
+</head>
+
+<body>
+
+  <!-- ========================= -->
+  <!-- TITULO -->
+  <!-- ========================= -->
+
+  <div class="titulo">
+
+    Informe QA
+
+  </div>
+
+  <div class="subtitulo">
+
+    <?= fecha ?>
+
+  </div>
+
+  <!-- ========================= -->
+  <!-- OBSERVACIONES -->
+  <!-- ========================= -->
+
+  <? for(let obs of observaciones){ ?>
+
+    <div class="observacion">
+
+      <!-- FOTO -->
+
+      <div class="foto">
+      
+        <? if(obs.IMAGEN_URL){ ?>
+
+          <img            
+            src="<?= obs.IMAGEN_URL ?>"
+          >
+
+        <? }else{ ?>
+
+          <div>
+            Sin imagen
+          </div>
+
+        <? } ?>
+
+      </div>
+
+      <!-- CONTENIDO -->
+
+      <div class="contenido">
+
+        <!-- MODULO -->
+
+        <div class="modulo">
+
+          <?= obs.MODULO ?>
+
+        </div>
+
+        <!-- META -->
+
+        <div class="meta">
+
+          QA:
+          <?= obs.QA ?>
+
+          |
+          
+          Fecha:
+          <?= obs.FECHA ?>
+
+        </div>
+
+        <!-- DESCRIPCION -->
+
+        <div class="bloque">
+
+          <div class="bloque-titulo">
+
+            Descripción
+
+          </div>
+
+          <div class="bloque-contenido">
+
+            <?= obs.DESCRIPCION_CORTA ?>
+
+          </div>
+
+        </div>
+
+        <!-- PASOS -->
+
+        <div class="bloque">
+
+          <div class="bloque-titulo">
+
+            Pasos a seguir
+
+          </div>
+
+          <div class="bloque-contenido">
+
+            <?= obs.PASOS_REPRODUCIR ?>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  <? } ?>
+
+</body>
+
+</html>
+view_observacion_editar.html
+<div class="container-fluid p-4">
+
+  <div class="card shadow">
+
+    <div class="card-header d-flex justify-content-between">
+
+      <h4>
+        Editar Observación
+      </h4>
+
+      <button
+        class="btn btn-secondary"
+        onclick="loadDashboard()"
+      >
+        Volver
+      </button>
+
+    </div>
+
+    <div class="card-body">
+
+      <input
+        type="hidden"
+        id="obsId"
+      >
+
+      <div class="row g-4">
+
+        <!-- IMAGEN -->
+        <div class="col-md-4">
+
+          <div
+            class="
+              border
+              rounded
+              p-3
+              text-center
+              bg-light
+            "
+          >
+
+            <img
+              id="previewImagenEdit"
+              class="img-fluid rounded shadow-sm"
+              style="
+                max-height:500px;
+                object-fit:contain;
+                display:none;
+              "
+            >
+
+            <div
+              id="sinImagenEdit"
+              class="text-muted"
+            >
+              Sin imagen
+            </div>
+
+            <div
+              id="contenedorUploadEdit"
+              class="mt-3"
+            >
+
+              <input
+                type="file"
+                id="obsImagenEdit"
+                class="form-control"
+                accept="image/*"
+              >
+
+            </div>
+
+            <div
+              id="mensajeImagenBloqueada"
+              class="
+                alert
+                alert-info
+                mt-3
+                d-none
+              "
+            >
+              La captura ya fue registrada y no puede modificarse.
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- FORMULARIO -->
+        <div class="col-md-8">
+
+          <div  class="mb-3">
+
+            <label class="form-label fw-bold">
+              Módulo
+            </label>
+
+            <input
+              id="obsModuloEdit"
+              class="form-control"
+            >
+
+          </div>
+
+          <div  id="grupoDescripcion" class="mb-3">
+
+            <label class="form-label fw-bold">
+              Descripción
+            </label>
+
+            <textarea
+              id="obsDescEdit"
+              class="form-control"
+              rows="5"
+            ></textarea>
+
+          </div>
+
+          <div id="grupoPasos" class="mb-3">
+
+            <label class="form-label fw-bold">
+              Pasos para reproducir
+            </label>
+
+            <textarea
+              id="obsPasosEdit"
+              class="form-control"
+              rows="7"
+            ></textarea>
+
+          </div>
+
+          <div class="mb-3">
+
+            <label class="form-label fw-bold">
+              Prioridad
+            </label>
+
+            <select
+              id="obsPrioridadEdit"
+              class="form-select"
+            >
+
+              <option>
+                BAJA
+              </option>
+
+              <option>
+                MEDIA
+              </option>
+
+              <option>
+                ALTA
+              </option>
+
+              <option>
+                CRITICA
+              </option>
+
+            </select>
+
+          </div>
+
+          <div
+            id="seccionAsignacionDev"
+            class="mb-3 d-none"
+          >
+
+            <label class="form-label fw-bold">
+              DEV Asignado
+            </label>
+
+            <select
+              id="obsDevAsignado"
+              class="form-select"
+            >
+
+              <option value="">
+                Seleccionar DEV
+              </option>
+
+            </select>
+
+          </div>
+
+          <div
+            id="infoAsignacion"
+            class="
+              alert
+              alert-info
+              d-none
+            "
+          >
+          
+            <input
+              type="hidden"
+              id="obsEstadoEdit"
+            >
+
+            <input
+              type="hidden"
+              id="obsDevActual"
+            >
+            
+          </div>
+
+
+          <button
+            class="btn btn-success"
+            onclick="guardarEdicionObservacion()"
+          >
+            Guardar Cambios
+          </button>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+<div class="container-fluid p-4">
+
+  <div class="card shadow">
+
+    <div class="card-header d-flex justify-content-between">
+
+      <h4>
+        Editar Observación
+      </h4>
+
+      <button
+        class="btn btn-secondary"
+        onclick="loadDashboard()"
+      >
+        Volver
+      </button>
+
+    </div>
+
+    <div class="card-body">
+
+      <input
+        type="hidden"
+        id="obsId"
+      >
+
+      <div class="row g-4">
+
+        <!-- IMAGEN -->
+        <div class="col-md-4">
+
+          <div
+            class="
+              border
+              rounded
+              p-3
+              text-center
+              bg-light
+            "
+          >
+
+            <img
+              id="previewImagenEdit"
+              class="img-fluid rounded shadow-sm"
+              style="
+                max-height:500px;
+                object-fit:contain;
+                display:none;
+              "
+            >
+
+            <div
+              id="sinImagenEdit"
+              class="text-muted"
+            >
+              Sin imagen
+            </div>
+
+            <div
+              id="contenedorUploadEdit"
+              class="mt-3"
+            >
+
+              <input
+                type="file"
+                id="obsImagenEdit"
+                class="form-control"
+                accept="image/*"
+              >
+
+            </div>
+
+            <div
+              id="mensajeImagenBloqueada"
+              class="
+                alert
+                alert-info
+                mt-3
+                d-none
+              "
+            >
+              La captura ya fue registrada y no puede modificarse.
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- FORMULARIO -->
+        <div class="col-md-8">
+
+          <div  class="mb-3">
+
+            <label class="form-label fw-bold">
+              Módulo
+            </label>
+
+            <input
+              id="obsModuloEdit"
+              class="form-control"
+            >
+
+          </div>
+
+          <div  id="grupoDescripcion" class="mb-3">
+
+            <label class="form-label fw-bold">
+              Descripción
+            </label>
+
+            <textarea
+              id="obsDescEdit"
+              class="form-control"
+              rows="5"
+            ></textarea>
+
+          </div>
+
+          <div id="grupoPasos" class="mb-3">
+
+            <label class="form-label fw-bold">
+              Pasos para reproducir
+            </label>
+
+            <textarea
+              id="obsPasosEdit"
+              class="form-control"
+              rows="7"
+            ></textarea>
+
+          </div>
+
+          <div class="mb-3">
+
+            <label class="form-label fw-bold">
+              Prioridad
+            </label>
+
+            <select
+              id="obsPrioridadEdit"
+              class="form-select"
+            >
+
+              <option>
+                BAJA
+              </option>
+
+              <option>
+                MEDIA
+              </option>
+
+              <option>
+                ALTA
+              </option>
+
+              <option>
+                CRITICA
+              </option>
+
+            </select>
+
+          </div>
+
+          <div
+            id="seccionAsignacionDev"
+            class="mb-3 d-none"
+          >
+
+            <label class="form-label fw-bold">
+              DEV Asignado
+            </label>
+
+            <select
+              id="obsDevAsignado"
+              class="form-select"
+            >
+
+              <option value="">
+                Seleccionar DEV
+              </option>
+
+            </select>
+
+          </div>
+
+          <div
+            id="infoAsignacion"
+            class="
+              alert
+              alert-info
+              d-none
+            "
+          >
+          
+            <input
+              type="hidden"
+              id="obsEstadoEdit"
+            >
+
+            <input
+              type="hidden"
+              id="obsDevActual"
+            >
+            
+          </div>
+
+
+          <button
+            class="btn btn-success"
+            onclick="guardarEdicionObservacion()"
+          >
+            Guardar Cambios
+          </button>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+component_chat.html
+<div
+  class="modal fade"
+  id="modalComentarios"
+  tabindex="-1"
+>
+
+  <div
+    class="modal-dialog modal-lg"
+  >
+
+    <div class="modal-content">
+
+      <div class="modal-header">
+
+        <h5
+          id="lblTituloComentarios"
+          class="modal-title"
+        >
+          Comentarios
+        </h5>
+
+        <button
+          class="btn-close"
+          data-bs-dismiss="modal"
+        ></button>
+
+      </div>
+
+      <div class="modal-body">
+
+        <div
+          id="lblInfoComentarios"
+          class="mb-3"
+        ></div>
+
+        <button
+          id="btnVerObsChat"
+          class="
+            btn
+            btn-primary
+            btn-sm
+            mb-3
+          "
+        >
+          👁 Ver Observación
+        </button>
+
+        <textarea
+          id="txtHistorialComentarios"
+          class="form-control mb-3"
+          rows="15"
+          readonly
+        ></textarea>
+
+        <textarea
+          id="txtNuevoComentario"
+          class="form-control"
+          rows="4"
+          placeholder="Escriba un comentario..."
+        ></textarea>
+
+        <div
+          id="contenedorRevision"
+          class="form-check mt-3"
+        >
+
+          <input
+            type="checkbox"
+            class="form-check-input"
+            id="chkRevision"
+          >
+
+          <label
+            class="form-check-label"
+          >
+            Marcar como listo para revisión
+          </label>
+
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+
+        <button
+          class="btn btn-success"
+          onclick="enviarComentario()"
+        >
+          Enviar
+        </button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+
+view_tareas_editar.html
+
+<div class="container-fluid p-4">
+
+  <div class="card shadow">
+
+    <div class="card-header d-flex justify-content-between">
+
+      <h4>
+        Editar Tarea
+      </h4>
+
+      <button
+        class="btn btn-secondary"
+        onclick="loadDashboard({
+          view:'TAREAS',
+          categoria:'TAREA'
+        })"
+      >
+        Volver
+      </button>
+
+    </div>
+
+    <div class="card-body">
+
+      <input
+        type="hidden"
+        id="obsId"
+      >
+
+      <input
+        type="hidden"
+        id="taskAsignacionesJson"
+      >
+
+      <input
+        type="hidden"
+        id="obsEstadoEdit"
+      >
+
+      <div class="row g-4">
+
+        <!-- IMAGEN -->
+        <div class="col-md-4">
+
+          <div
+            class="
+              border
+              rounded
+              p-3
+              text-center
+              bg-light
+            "
+          >
+
+            <img
+              id="previewImagenEdit"
+              class="img-fluid rounded shadow-sm"
+              style="
+                max-height:500px;
+                object-fit:contain;
+                display:none;
+              "
+            >
+
+            <div
+              id="sinImagenEdit"
+              class="text-muted"
+            >
+              Sin imagen
+            </div>
+
+            <div
+              id="contenedorUploadEdit"
+              class="mt-3"
+            >
+
+              <input
+                type="file"
+                id="obsImagenEdit"
+                class="form-control"
+                accept="image/*"
+              >
+
+            </div>
+
+            <div
+              id="mensajeImagenBloqueada"
+              class="
+                alert
+                alert-info
+                mt-3
+                d-none
+              "
+            >
+              La captura ya fue registrada y no puede modificarse.
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- FORMULARIO -->
+        <div class="col-md-8">
+
+          <div class="mb-3">
+
+            <label class="form-label fw-bold">
+              Módulo
+            </label>
+
+            <input
+              id="obsModuloEdit"
+              class="form-control"
+            >
+
+          </div>
+
+          <div
+            id="grupoDescripcion"
+            class="mb-3"
+          >
+
+            <label class="form-label fw-bold">
+              Descripción de la tarea
+            </label>
+
+            <textarea
+              id="obsDescEdit"
+              class="form-control"
+              rows="5"
+            ></textarea>
+
+          </div>
+
+          <div
+            id="grupoPasos"
+            class="mb-3"
+          >
+
+            <label class="form-label fw-bold">
+              Detalle
+            </label>
+
+            <textarea
+              id="obsPasosEdit"
+              class="form-control"
+              rows="7"
+            ></textarea>
+
+          </div>
+
+          <div class="mb-3">
+
+            <label class="form-label fw-bold">
+              Prioridad
+            </label>
+
+            <select
+              id="obsPrioridadEdit"
+              class="form-select"
+            >
+
+              <option>
+                BAJA
+              </option>
+
+              <option>
+                MEDIA
+              </option>
+
+              <option>
+                ALTA
+              </option>
+
+              <option>
+                CRITICA
+              </option>
+
+            </select>
+
+          </div>
+
+          <!-- ASIGNACIONES -->
+          <div
+            id="seccionAsignaciones"
+            class="mb-4"
+          >
+
+            <label class="form-label fw-bold">
+              Usuarios asignados
+            </label>
+
+            <div
+              class="table-responsive border rounded"
+              style="
+                max-height:300px;
+                overflow-y:auto;
+              "
+            >
+
+              <table
+                id="tblUsuariosAsignados"
+                class="
+                  table
+                  table-sm
+                  table-bordered
+                  table-hover
+                  align-middle
+                "
+              >
+
+                <thead
+                  class="table-light"
+                >
+
+                  <tr>
+
+                    <th
+                      style="
+                        width:70px;
+                      "
+                    >
+                      ✔
+                    </th>
+
+                    <th>
+                      Nombre
+                    </th>
+
+                    <th>
+                      Rol
+                    </th>
+
+                  </tr>
+
+                </thead>
+
+                <tbody>
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+          </div>
+
+          <!-- RESUMEN -->
+          <div
+            id="taskResumenAsignaciones"
+            class="
+              alert
+              alert-secondary
+              mt-3
+            "
+          >
+
+            Sin usuarios asignados
+
+          </div>
+
+          <!-- INFO -->
+          <div
+            id="infoAsignacion"
+            class="
+              alert
+              alert-info
+              d-none
+            "
+          >
+
+          </div>
+
+          <!-- BOTONES -->
+          <div class="mt-4">
+
+            <button
+              class="btn btn-success"
+              onclick="guardarEdicionTarea()"
+            >
+              Guardar Cambios
+            </button>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+
