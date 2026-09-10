@@ -1,0 +1,642 @@
+<script>
+window.kanbanState = {
+  sprintId: "TODOS",
+  onlyMine: false,
+  itemsById: {}
+};
+
+function initKanban(filters = {}){
+
+  const sprintSelect = document.getElementById("kanbanSprintSelect");
+  const onlyMineCheck = document.getElementById("kanbanOnlyMine");
+
+  if(!sprintSelect){
+    return;
+  }
+
+  sprintSelect.onchange = () => {
+    refreshKanban({
+      sprintId: sprintSelect.value,
+      onlyMine: onlyMineCheck ? !!onlyMineCheck.checked : false
+    });
+  };
+
+  if(onlyMineCheck){
+    onlyMineCheck.onchange = () => {
+      refreshKanban({
+        sprintId: sprintSelect.value,
+        onlyMine: !!onlyMineCheck.checked
+      });
+    };
+  }
+
+  _kanbanEnsureSharedTaskModals();
+
+  bindKanbanScrollButtons();
+
+  refreshKanban(filters || {});
+}
+
+function _getKanbanScrollableArea(){
+  return document.querySelector(".kanban-board") || document.getElementById("kanbanBoard");
+}
+
+function bindKanbanScrollButtons(){
+
+  const leftBtn = document.getElementById("btnScrollKanbanLeft");
+  const rightBtn = document.getElementById("btnScrollKanbanRight");
+
+  if(!leftBtn || !rightBtn){
+    return;
+  }
+
+  const setupHold = (btn, direction) => {
+
+    let timer = null;
+
+    const start = () => {
+      const area = _getKanbanScrollableArea();
+
+      if(!area){
+        return;
+      }
+
+      if(timer){
+        clearInterval(timer);
+      }
+
+      timer = setInterval(() => {
+        area.scrollLeft += (direction * 18);
+      }, 16);
+    };
+
+    const stop = () => {
+      if(timer){
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+
+    btn.onmousedown = start;
+    btn.onmouseup = stop;
+    btn.onmouseleave = stop;
+    btn.ontouchstart = start;
+    btn.ontouchend = stop;
+  };
+
+  setupHold(leftBtn, -1);
+  setupHold(rightBtn, 1);
+}
+
+function _kanbanPriorityClass(priority){
+  const value = String(priority || "").toUpperCase();
+
+  if(value === "CRITICA") return "prio-critica";
+  if(value === "ALTA") return "prio-alta";
+  if(value === "MEDIA") return "prio-media";
+  return "prio-baja";
+}
+
+function _kanbanEscapeHtml(value){
+  return String(value === null || value === undefined ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function _kanbanNl2Br(value){
+  return _kanbanEscapeHtml(value).replace(/\n/g, "<br>");
+}
+
+function _kanbanEnsureSharedTaskModals(){
+
+  const host = document.getElementById("app") || document.body;
+
+  if(!document.getElementById("modalComentarios")){
+    const chatWrap = document.createElement("div");
+
+    chatWrap.innerHTML = `
+      <div class="modal fade" id="modalComentarios" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 id="lblTituloComentarios" class="modal-title">Comentarios</h5>
+              <button class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div id="lblInfoComentarios" class="mb-3"></div>
+              <button id="btnVerObsChat" class="btn btn-primary btn-sm mb-3">
+                <i class="bi bi-eye me-1"></i>Ver Observacion
+              </button>
+              <div id="txtHistorialComentarios" class="border rounded p-3 bg-light mb-3" style="height:400px;overflow-y:auto;"></div>
+              <textarea id="txtNuevoComentario" class="form-control" rows="4" placeholder="Escriba un comentario..."></textarea>
+              <div id="contenedorRevision" class="form-check mt-3">
+                <input type="hidden" id="chatObsId">
+                <input type="hidden" id="DshCategoria">
+                <input type="hidden" id="chatTipo">
+                <div class="d-none">
+                  <input type="checkbox" id="chkMarcarRevision" class="form-check-input">
+                  <label class="form-check-label">Marcar como listo para revision</label>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-success" onclick="enviarComentario()">Enviar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    host.appendChild(chatWrap.firstElementChild);
+  }
+
+  if(!document.getElementById("modalObservacion")){
+    const detailWrap = document.createElement("div");
+
+    detailWrap.innerHTML = `
+      <div class="modal fade" id="modalObservacion" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Detalle Observacion</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detalleObservacion"></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    host.appendChild(detailWrap.firstElementChild);
+  }
+
+  const modalComentarios = document.getElementById("modalComentarios");
+
+  if(modalComentarios && !modalComentarios.dataset.kanbanPendingBind){
+    modalComentarios.addEventListener("hidden.bs.modal", () => {
+      window.kanbanPendingMove = null;
+
+      const input = document.getElementById("txtNuevoComentario");
+
+      if(input){
+        input.placeholder = "Escriba un comentario...";
+      }
+    });
+
+    modalComentarios.dataset.kanbanPendingBind = "1";
+  }
+}
+
+function _kanbanParseAsignados(raw){
+  try{
+    const parsed = JSON.parse(String(raw || "{}"));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  }catch(error){
+    return {};
+  }
+}
+
+function abrirAsignadosTareaKanban(id){
+
+  const itemId = String(id || "").trim();
+  const item = (window.kanbanState.itemsById || {})[itemId];
+
+  if(!item){
+    return;
+  }
+
+  const parsed = _kanbanParseAsignados(item.usuariosAsignados);
+  const bloques = [];
+
+  Object.keys(parsed).forEach(rol => {
+    const lista = Array.isArray(parsed[rol]) ? parsed[rol].filter(Boolean) : [];
+
+    if(lista.length){
+      bloques.push(`<div class="mb-2"><div class="fw-semibold">${_kanbanEscapeHtml(rol)}</div><div>${_kanbanEscapeHtml(lista.join(", "))}</div></div>`);
+    }
+  });
+
+  const dev = String(item.dev || "").trim();
+
+  Swal.fire({
+    icon: "info",
+    title: `Asignados - ${_kanbanEscapeHtml(item.id || itemId)}`,
+    html: `
+      <div class="text-start">
+        <div class="mb-2"><b>DEV principal:</b> ${_kanbanEscapeHtml(dev || "Sin asignar")}</div>
+        ${bloques.length ? bloques.join("") : '<div class="text-muted">Sin usuarios asignados en roles.</div>'}
+      </div>
+    `
+  });
+}
+
+function abrirChatTareaKanban(id, options = {}){
+
+  const itemId = String(id || "").trim();
+
+  if(!itemId || typeof abrirComentarios !== "function"){
+    return;
+  }
+
+  _kanbanEnsureSharedTaskModals();
+
+  const tipo = (options && options.tipo === "OBSERVACION") ? "OBSERVACION" : "TAREA";
+
+  const chatTipo = document.getElementById("chatTipo");
+  const categoria = document.getElementById("DshCategoria");
+
+  if(chatTipo){
+    chatTipo.value = tipo;
+  }
+
+  if(categoria){
+    categoria.value = tipo;
+  }
+
+  const pendingMove = options && options.pendingMove ? options.pendingMove : null;
+
+  if(pendingMove){
+    window.kanbanPendingMove = {
+      id: itemId,
+      oldState: String(pendingMove.oldState || "").trim(),
+      newState: String(pendingMove.newState || "").trim(),
+      sprintId: window.kanbanState && window.kanbanState.sprintId ? window.kanbanState.sprintId : "TODOS"
+    };
+  }else if(window.kanbanPendingMove && String(window.kanbanPendingMove.id || "") === itemId){
+    window.kanbanPendingMove = null;
+  }
+
+  Promise.resolve(abrirComentarios(itemId)).then(() => {
+    if(!pendingMove){
+      return;
+    }
+
+    const input = document.getElementById("txtNuevoComentario");
+
+    if(input){
+      input.value = "";
+      input.placeholder = `Escriba el motivo del cambio de estado de ${pendingMove.oldState} a ${pendingMove.newState}...`;
+      input.focus();
+    }
+
+    Swal.fire({
+      icon: "info",
+      title: "Comentario requerido",
+      text: `Para mover la tarea a ${pendingMove.newState}, primero debe registrar un mensaje en el chat.`
+    });
+  });
+}
+
+function _kanbanEnsureDetailModal(){
+  let modal = document.getElementById("modalTareaKanban");
+
+  if(modal){
+    return modal;
+  }
+
+  const wrapper = document.createElement("div");
+
+  wrapper.innerHTML = `
+    <div class="modal fade" id="modalTareaKanban" tabindex="-1">
+      <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Detalle tarea</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body" id="detalleTareaKanban"></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  modal = wrapper.firstElementChild;
+  document.body.appendChild(modal);
+
+  return modal;
+}
+
+function abrirDetalleTareaKanban(id){
+  const itemId = String(id || "").trim();
+
+  if(!itemId){
+    return;
+  }
+
+  showLoading("Cargando tarea...");
+
+  google.script.run
+    .withSuccessHandler(task => {
+      const modal = _kanbanEnsureDetailModal();
+      const body = document.getElementById("detalleTareaKanban");
+
+      let imageUrl = "";
+      const capturas = String(task && task.CAPTURAS || "");
+      const match = capturas.match(/[-\w]{25,}/);
+
+      if(match && match[0]){
+        imageUrl = `https://lh3.googleusercontent.com/d/${match[0]}`;
+      }
+
+      if(body){
+        body.innerHTML = `
+          <div class="container-fluid">
+            <div class="row">
+              <div class="col-md-4 text-center">
+                ${
+                  imageUrl
+                    ? `<img src="${_kanbanEscapeHtml(imageUrl)}" class="img-fluid rounded border shadow-sm" style="max-height:500px;object-fit:contain;">`
+                    : `<div class="text-muted">Sin imagen</div>`
+                }
+              </div>
+              <div class="col-md-8">
+                <h5 class="mb-3">${_kanbanEscapeHtml(task && task.ID_OBSERVACION || itemId)}</h5>
+                <div class="mb-2"><b>Creado por:</b> ${_kanbanEscapeHtml(task && task.QA || "")}</div>
+                <div class="mb-2"><b>Asignado a:</b> ${_kanbanEscapeHtml(task && task.DEV_ASIGNADO || "")}</div>
+                <div class="mb-2"><b>Módulo:</b> ${_kanbanEscapeHtml(task && task.MODULO || "")}</div>
+                <div class="mb-2"><b>Estado:</b> ${_kanbanEscapeHtml(task && task.ESTADO || "")}</div>
+                <div class="mb-2"><b>Prioridad:</b> ${_kanbanEscapeHtml(task && task.PRIORIDAD || "")}</div>
+                <hr>
+                <div class="mb-3">
+                  <label class="fw-bold">Descripción</label>
+                  <div class="border rounded p-2 bg-light">${_kanbanNl2Br(task && task.DESCRIPCION_CORTA || "")}</div>
+                </div>
+                <div>
+                  <label class="fw-bold">Detalle</label>
+                  <div class="border rounded p-2 bg-light">${_kanbanNl2Br(task && task.PASOS_REPRODUCIR || "")}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      hideLoading();
+
+      bootstrap.Modal
+        .getOrCreateInstance(modal)
+        .show();
+    })
+    .withFailureHandler(err => {
+      hideLoading();
+      Swal.fire({icon: "error", title: "Error", text: err && err.message ? err.message : String(err)});
+    })
+    .getTareaById(itemId);
+}
+
+function abrirDetalleObservacionKanban(id){
+  const itemId = String(id || "").trim();
+
+  if(!itemId){
+    return;
+  }
+
+  _kanbanEnsureSharedTaskModals();
+
+  showLoading("Cargando observación...");
+
+  google.script.run
+    .withSuccessHandler(obs => {
+      const modal = document.getElementById("modalObservacion");
+      const body = document.getElementById("detalleObservacion");
+
+      let imageUrl = "";
+      const capturas = String(obs && obs.CAPTURAS || "");
+      const match = capturas.match(/[-\w]{25,}/);
+
+      if(match && match[0]){
+        imageUrl = `https://lh3.googleusercontent.com/d/${match[0]}`;
+      }
+
+      if(body){
+        body.innerHTML = `
+          <div class="container-fluid">
+            <div class="row">
+              <div class="col-md-4 text-center">
+                ${
+                  imageUrl
+                    ? `<img src="${_kanbanEscapeHtml(imageUrl)}" class="img-fluid rounded border shadow-sm" style="max-height:500px;object-fit:contain;">`
+                    : `<div class="text-muted">Sin imagen</div>`
+                }
+              </div>
+              <div class="col-md-8">
+                <h5 class="mb-3">${_kanbanEscapeHtml(obs && obs.ID_OBSERVACION || itemId)}</h5>
+                <div class="mb-2"><b>Creado por:</b> ${_kanbanEscapeHtml(obs && obs.QA || "")}</div>
+                <div class="mb-2"><b>Asignado a:</b> ${_kanbanEscapeHtml(obs && obs.DEV_ASIGNADO || "")}</div>
+                <div class="mb-2"><b>Módulo:</b> ${_kanbanEscapeHtml(obs && obs.MODULO || "")}</div>
+                <div class="mb-2"><b>Estado:</b> ${_kanbanEscapeHtml(obs && obs.ESTADO || "")}</div>
+                <div class="mb-2"><b>Prioridad:</b> ${_kanbanEscapeHtml(obs && obs.PRIORIDAD || "")}</div>
+                <hr>
+                <div class="mb-3">
+                  <label class="fw-bold">Descripción</label>
+                  <div class="border rounded p-2 bg-light">${_kanbanNl2Br(obs && obs.DESCRIPCION_CORTA || "")}</div>
+                </div>
+                <div>
+                  <label class="fw-bold">Detalle</label>
+                  <div class="border rounded p-2 bg-light">${_kanbanNl2Br(obs && obs.PASOS_REPRODUCIR || "")}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      hideLoading();
+
+      bootstrap.Modal
+        .getOrCreateInstance(modal)
+        .show();
+    })
+    .withFailureHandler(err => {
+      hideLoading();
+      Swal.fire({icon: "error", title: "Error", text: err && err.message ? err.message : String(err)});
+    })
+    .getObservacionById(itemId);
+}
+
+function _kanbanRender(pack){
+
+  const board = document.getElementById("kanbanBoard");
+  const sprintSelect = document.getElementById("kanbanSprintSelect");
+
+  if(!board || !sprintSelect){
+    return;
+  }
+
+  const columns = Array.isArray(pack.columns) ? pack.columns : [];
+  const itemsByColumn = pack.itemsByColumn || {};
+  const counts = pack.counts || {};
+  const sprints = Array.isArray(pack.sprints) ? pack.sprints : [];
+  const selectedSprint = pack.selectedSprint || "TODOS";
+  const selectedOnlyMine = !!pack.selectedOnlyMine;
+  const onlyMineCheck = document.getElementById("kanbanOnlyMine");
+
+  window.kanbanState.sprintId = selectedSprint;
+  window.kanbanState.onlyMine = selectedOnlyMine;
+  window.kanbanState.itemsById = {};
+
+  if(onlyMineCheck){
+    onlyMineCheck.checked = selectedOnlyMine;
+  }
+
+  sprintSelect.innerHTML = sprints.map(s => `
+    <option value="${s.id}" ${s.id === selectedSprint ? "selected" : ""}>${s.label}</option>
+  `).join("");
+
+  board.innerHTML = columns.map(col => {
+
+    const items = Array.isArray(itemsByColumn[col.id]) ? itemsByColumn[col.id] : [];
+
+    items.forEach(item => {
+      window.kanbanState.itemsById[item.id] = item;
+    });
+
+    return `
+      <section class="kanban-column" data-state="${col.id}">
+        <header class="kanban-column-header">
+          <span>${col.label}</span>
+          <span class="badge text-bg-light">${counts[col.id] || 0}</span>
+        </header>
+        <div class="kanban-column-body" data-state="${col.id}">
+          ${items.map(item => {
+            const safeId = String(item.id || "").replace(/'/g, "\\'");
+            const esObs = item.tipo === "OBSERVACION";
+            const detalleFn = esObs ? "abrirDetalleObservacionKanban" : "abrirDetalleTareaKanban";
+
+            return `
+            <article class="kanban-card${esObs ? " kanban-card-obs" : ""}" draggable="true" data-id="${item.id}">
+              <div class="kanban-card-title">${item.id}</div>
+              <div class="kanban-card-subtitle">${item.modulo || "Sin modulo"}</div>
+              <div class="kanban-card-desc">${item.titulo || "Sin descripcion"}</div>
+              <div class="d-flex justify-content-between align-items-center gap-2 mt-2">
+                <span class="kanban-priority ${_kanbanPriorityClass(item.prioridad)}">${item.prioridad || "BAJA"}</span>
+                <div class="d-flex align-items-center gap-1">
+                  <button class="btn btn-outline-info btn-sm" title="Ver asignados" onclick="abrirAsignadosTareaKanban('${safeId}')">
+                    <i class="bi bi-people"></i>
+                  </button>
+                  <button class="btn btn-outline-success btn-sm" title="Abrir chat" onclick="abrirChatTareaKanban('${safeId}', {tipo: '${item.tipo}'})">
+                    <i class="bi bi-chat-dots"></i>
+                  </button>
+                  <button class="btn btn-outline-primary btn-sm" title="Ver detalle" onclick="${detalleFn}('${safeId}')">
+                    <i class="bi bi-eye"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="kanban-meta mt-2">Sprint: ${item.sprintId || "BACKLOG"}</div>
+            </article>
+          `;
+          }).join("")}
+        </div>
+      </section>
+    `;
+  }).join("");
+
+  _kanbanBindDnD();
+}
+
+function _kanbanBindDnD(){
+
+  const cards = document.querySelectorAll(".kanban-card");
+  const bodies = document.querySelectorAll(".kanban-column-body");
+
+  cards.forEach(card => {
+    card.ondragstart = (event) => {
+      event.dataTransfer.setData("text/plain", card.getAttribute("data-id"));
+      event.dataTransfer.effectAllowed = "move";
+      card.classList.add("dragging");
+    };
+
+    card.ondragend = () => {
+      card.classList.remove("dragging");
+    };
+  });
+
+  bodies.forEach(body => {
+    body.ondragover = (event) => {
+      event.preventDefault();
+      body.classList.add("is-over");
+    };
+
+    body.ondragleave = () => {
+      body.classList.remove("is-over");
+    };
+
+    body.ondrop = (event) => {
+      event.preventDefault();
+      body.classList.remove("is-over");
+
+      const itemId = event.dataTransfer.getData("text/plain");
+      const newState = body.getAttribute("data-state");
+      const card = document.querySelector(`.kanban-card[data-id="${itemId}"]`);
+
+      if(!itemId || !newState || !card){
+        return;
+      }
+
+      const fromBody = card.closest(".kanban-column-body");
+      const oldState = fromBody ? fromBody.getAttribute("data-state") : "";
+
+      if(oldState === newState){
+        return;
+      }
+
+      const draggedItem = (window.kanbanState && window.kanbanState.itemsById) ? window.kanbanState.itemsById[itemId] : null;
+
+      abrirChatTareaKanban(itemId, {
+        tipo: draggedItem ? draggedItem.tipo : "TAREA",
+        pendingMove: {
+          oldState: oldState,
+          newState: newState
+        }
+      });
+    };
+  });
+}
+
+function refreshKanban(filters = {}){
+
+  const sprintSelect = document.getElementById("kanbanSprintSelect");
+
+  const sprintId =
+    (filters && filters.sprintId)
+    || (sprintSelect ? sprintSelect.value : "TODOS")
+    || "TODOS";
+
+  const onlyMineCheck = document.getElementById("kanbanOnlyMine");
+
+  const onlyMine =
+    (filters && typeof filters.onlyMine === "boolean")
+      ? filters.onlyMine
+      : (onlyMineCheck ? !!onlyMineCheck.checked : !!(window.kanbanState && window.kanbanState.onlyMine));
+
+  showLoading("Cargando tablero...");
+
+  runServer(
+    "KANBAN_loadData",
+    {
+      sprintId: sprintId,
+      onlyMine: onlyMine
+    },
+    typeof getClientUserContext === "function" ? getClientUserContext() : null
+  )
+  .then(pack => {
+    _kanbanRender(pack || {});
+  })
+  .catch(err => {
+    Swal.fire({icon:'error',title:'Error',text: err.message || String(err)});
+  })
+  .finally(() => {
+    hideLoading();
+  });
+}
+
+window.initKanban = initKanban;
+window.refreshKanban = refreshKanban;
+window.bindKanbanScrollButtons = bindKanbanScrollButtons;
+window.abrirChatTareaKanban = abrirChatTareaKanban;
+window.abrirAsignadosTareaKanban = abrirAsignadosTareaKanban;
+window.abrirDetalleObservacionKanban = abrirDetalleObservacionKanban;
+</script>

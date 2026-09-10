@@ -1,0 +1,1134 @@
+<style>
+
+body{
+  font-family: "Segoe UI", "Noto Sans", sans-serif;
+  background:
+    radial-gradient(circle at 5% 0%, #e8f0ff 0%, rgba(232, 240, 255, 0) 35%),
+    linear-gradient(180deg, var(--studio-bg-soft) 0%, var(--studio-bg) 100%);
+  color: var(--studio-text);
+  overflow-x:hidden;
+}
+
+:root{
+  --sidebar-width: 250px;
+}
+
+#layout{
+  min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+/* =========================
+   SIDEBAR
+========================= */
+
+#sidebar{
+
+  width:var(--sidebar-width);
+  flex: 0 0 var(--sidebar-width);
+  min-height:100vh;
+  background: linear-gradient(190deg, #1f3f77 0%, #1f4d8f 50%, #2a5da1 100%);
+  color:#fff;
+  box-shadow: var(--studio-shadow);
+  padding: 1rem;
+}
+
+#sidebar .btn{
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.24);
+  color: #f8fbff;
+  background: rgba(255,255,255,0.08);
+  font-weight: 600;
+  text-align: left;
+  padding: 0.65rem 0.8rem;
+}
+
+#sidebar .btn:hover,
+#sidebar .btn:focus{
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+}
+
+/* =========================
+   APP
+========================= */
+
+#app{
+  min-height:100vh;
+  padding: 1.1rem;
+  width: calc(100vw - var(--sidebar-width));
+  max-width: calc(100vw - var(--sidebar-width));
+  overflow-x: hidden;
+}
+
+#sidebar.d-none + #app{
+  width: 100vw;
+  max-width: 100vw;
+}
+
+.studio-shell{
+  width: 100%;
+  max-width: 100%;
+  background: var(--studio-surface);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--studio-radius);
+  box-shadow: var(--studio-shadow);
+}
+
+.table{
+  border-color: var(--studio-border);
+}
+
+.table thead th{
+  color: var(--studio-text-muted);
+  font-weight: 700;
+  border-bottom-width: 1px;
+}
+
+.table-hover tbody tr:hover{
+  background: #f3f7ff;
+}
+
+.navbar{
+  background: linear-gradient(90deg, #133868 0%, #1552a0 100%) !important;
+  border-bottom: 1px solid rgba(19, 56, 104, 0.95);
+}
+
+.navbar .navbar-brand{
+  font-weight: 700;
+  letter-spacing: 0.1px;
+  color: #f8fbff !important;
+}
+
+.navbar #txtNavbarUser{
+  color: #f8fbff !important;
+  font-weight: 600;
+}
+
+.navbar #cmbRoles{
+  background: rgba(12, 40, 82, 0.9);
+  color: #f8fbff;
+  border-color: rgba(24, 98, 181, 0.9) !important;
+}
+
+.navbar #cmbRoles option{
+  color: #1f2d3d;
+}
+
+.navbar .btn-outline-light{
+  border-color: rgba(24, 98, 181, 0.95);
+  background: rgba(12, 40, 82, 0.9);
+  color: #f8fbff;
+}
+
+.navbar .btn-outline-light:hover,
+.navbar .btn-outline-light:focus{
+  background: rgba(18, 58, 111, 0.95);
+  border-color: rgba(41, 128, 233, 0.95);
+  color: #f8fbff;
+}
+
+.btn{
+  border-radius: 12px;
+}
+
+.btn-primary{
+  background-color: var(--studio-primary);
+  border-color: var(--studio-primary);
+}
+
+.btn-primary:hover,
+.btn-primary:focus{
+  background-color: var(--studio-primary-600);
+  border-color: var(--studio-primary-600);
+}
+
+.btn-dark{
+  background-color: #1f4f92;
+  border-color: #1f4f92;
+}
+
+.btn-info{
+  background-color: #2b7de9;
+  border-color: #2b7de9;
+  color: #fff;
+}
+
+.btn-success{
+  background-color: var(--studio-success);
+  border-color: var(--studio-success);
+}
+
+.btn-danger{
+  background-color: var(--studio-danger);
+  border-color: var(--studio-danger);
+}
+
+.btn-warning{
+  background-color: var(--studio-warning);
+  border-color: var(--studio-warning);
+  color: #1f2937;
+}
+
+.form-control,
+.form-select,
+.form-check-input,
+.select2-container--default .select2-selection--single{
+  border-radius: 10px !important;
+  border-color: var(--studio-border) !important;
+}
+
+.form-control:focus,
+.form-select:focus,
+.form-check-input:focus{
+  box-shadow: 0 0 0 0.2rem rgba(26,115,232,0.16);
+  border-color: #9dc0f6;
+}
+
+.modal-content{
+  border: 1px solid var(--studio-border);
+  border-radius: 16px;
+  box-shadow: var(--studio-shadow);
+}
+
+.modal-header,
+.modal-footer{
+  background: var(--studio-surface-2);
+}
+
+.dataTables_wrapper .dataTables_paginate .paginate_button.current,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current:hover{
+  background: var(--studio-primary) !important;
+  border-color: var(--studio-primary) !important;
+  color: #fff !important;
+}
+
+.bi{
+  vertical-align: -0.125em;
+}
+
+.dashboard-controls{
+  border: 1px solid var(--studio-border);
+  border-radius: 12px;
+  background: var(--studio-surface-2);
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.table-scroll{
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--studio-border);
+  border-radius: 12px;
+}
+
+.table-scroll table th,
+.table-scroll table td{
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+
+.table-scroll table{
+  table-layout: fixed;
+}
+
+.table-scroll .dataTables_wrapper,
+.table-scroll .dataTables_scroll{
+  width: 100%;
+}
+
+.table-scroll .dataTables_scrollBody{
+  max-width: 100% !important;
+}
+
+.table-scroll-hint{
+  font-size: 0.82rem;
+  color: var(--studio-text-muted);
+}
+
+.btn-scroll-table{
+  min-width: 40px;
+}
+
+.docs-card{
+  background: var(--studio-surface);
+  border: 1px solid var(--studio-border);
+  border-radius: 14px;
+  padding: 1rem;
+  min-height: 165px;
+  box-shadow: var(--studio-shadow);
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+  cursor: pointer;
+}
+
+.docs-card:hover{
+  transform: translateY(-2px);
+  box-shadow: 0 14px 26px rgba(21, 52, 98, 0.14);
+}
+
+.docs-name{
+  font-weight: 700;
+  color: var(--studio-text);
+}
+
+.docs-meta{
+  font-size: 0.88rem;
+  color: var(--studio-text-muted);
+}
+
+.kanban-board{
+  display: grid;
+  grid-template-columns: repeat(5, minmax(260px, 1fr));
+  gap: 0.9rem;
+  padding-bottom: 0.25rem;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.kanban-board-wrap{
+  width: 100%;
+  overflow-x: hidden;
+  overflow-y: hidden;
+}
+
+.kanban-column{
+  background: linear-gradient(180deg, #f9fbff 0%, #eef4ff 100%);
+  border: 1px solid var(--studio-border);
+  border-radius: 14px;
+  min-height: 70vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.kanban-column-header{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--studio-border);
+  font-weight: 700;
+}
+
+.kanban-column-body{
+  padding: 0.75rem;
+  min-height: 200px;
+  flex: 1;
+  max-height: calc(4 * 160px);
+  overflow-y: auto;
+}
+
+.kanban-column-body.is-over{
+  outline: 2px dashed #2b7de9;
+  outline-offset: -4px;
+  background: #eaf2ff;
+  border-radius: 10px;
+}
+
+.kanban-card{
+  background: #ffffff;
+  border: 1px solid #d9e4f6;
+  border-left: 4px solid var(--studio-primary);
+  border-radius: 12px;
+  padding: 0.65rem;
+  margin-bottom: 0.65rem;
+  box-shadow: 0 8px 18px rgba(19, 56, 104, 0.08);
+  cursor: grab;
+}
+
+.kanban-card.kanban-card-obs{
+  border-left: 4px solid var(--studio-obs);
+}
+
+.kanban-card.dragging{
+  opacity: 0.6;
+}
+
+.kanban-card-title{
+  font-weight: 700;
+  color: #1e3f76;
+  font-size: 0.88rem;
+}
+
+.kanban-card-subtitle{
+  font-size: 0.82rem;
+  color: #4a6288;
+}
+
+.kanban-card-desc{
+  margin-top: 0.35rem;
+  font-size: 0.9rem;
+  color: #1f2937;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 3.9em;
+}
+
+.kanban-meta{
+  font-size: 0.78rem;
+  color: #5f6f8b;
+}
+
+.kanban-priority{
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid transparent;
+}
+
+.kanban-priority.prio-critica{
+  background: #ffe3e3;
+  color: #9b1c1c;
+  border-color: #f8b4b4;
+}
+
+.kanban-priority.prio-alta{
+  background: #fff4df;
+  color: #8a4b08;
+  border-color: #f9d39a;
+}
+
+.kanban-priority.prio-media{
+  background: #e8f2ff;
+  color: #1f4f92;
+  border-color: #bfd7ff;
+}
+
+.kanban-priority.prio-baja{
+  background: #e9f9ef;
+  color: #1f7a3e;
+  border-color: #bde7cc;
+}
+
+/* =========================
+   LOGIN
+========================= */
+
+.login-wrapper{
+
+  min-height:90vh;
+
+  display:flex;
+
+  justify-content:center;
+
+  align-items:center;
+}
+
+//@media (max-width: 992px){
+//  #sidebar{
+//    width: 100%;
+//    flex: 0 0 auto;
+//    min-height: auto;
+//  }
+//
+//  #app{
+//   padding: 0.7rem;
+//    width: 100vw;
+//    max-width: 100vw;
+//  }
+//
+//  .kanban-board{
+//    grid-template-columns: repeat(5, minmax(230px, 1fr));
+//  }
+//}
+
+</style>
+
+<script>
+
+async function cargarPDFLib(){
+
+  // =========================
+  // YA CARGADO
+  // =========================
+
+  if(
+
+    typeof PDFLib !==
+    "undefined"
+
+  ){
+    return;
+  }
+
+  // =========================
+  // SCRIPT
+  // =========================
+
+  await new Promise((resolve,reject)=>{
+
+    const script =
+
+      document.createElement(
+        "script"
+      );
+
+    script.src =
+
+      "https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js";
+
+    script.onload =
+      resolve;
+
+    script.onerror =
+      reject;
+
+    document.head
+      .appendChild(script);
+  });
+}
+
+</script>
+
+<script>
+function dividirTexto(
+
+  texto,
+  maxChars = 65
+
+){
+
+  if(!texto){
+    return [];
+  }
+
+  // =========================
+  // NORMALIZAR
+  // =========================
+
+  texto =
+
+    String(texto)
+      .replace(/\r/g,'');
+
+  // =========================
+  // SPLIT SALTOS REALES
+  // =========================
+
+  const bloques =
+
+    texto.split('\n');
+
+  const resultado = [];
+
+  // =========================
+  // RECORRER BLOQUES
+  // =========================
+
+  for(
+
+    const bloque of bloques
+
+  ){
+
+    // =========================
+    // LINEA VACIA
+    // =========================
+
+    if(!bloque.trim()){
+
+      resultado.push('');
+      continue;
+    }
+
+    // =========================
+    // WRAP NORMAL
+    // =========================
+
+    const palabras =
+
+      bloque.split(' ');
+
+    let linea = '';
+
+    for(
+
+      const palabra of palabras
+
+    ){
+
+      if(
+
+        (linea + palabra).length
+        > maxChars
+
+      ){
+
+        resultado.push(
+          linea.trim()
+        );
+
+        linea =
+          palabra + ' ';
+
+      }else{
+
+        linea +=
+          palabra + ' ';
+      }
+    }
+
+    // =========================
+    // PUSH FINAL
+    // =========================
+
+    if(linea.trim()){
+
+      resultado.push(
+        linea.trim()
+      );
+    }
+  }
+
+  return resultado;
+}
+</script>
+
+
+<script>
+
+async function generarPDFLib(ids){
+
+
+  await cargarPDFLib();
+  showLoading(
+    "Generando PDF..."
+  );
+
+  
+
+  google.script.run
+
+    .withSuccessHandler(
+
+      async(data)=>{
+
+        try{
+
+          // =========================
+          // PDF DOC
+          // =========================
+
+          const pdfDoc =
+
+            await PDFLib
+              .PDFDocument
+              .create();
+
+          // =========================
+          // PAGE
+          // =========================
+
+          let page =
+
+            pdfDoc.addPage([
+              595,
+              842
+            ]);
+
+          // =========================
+          // POSICION
+          // =========================
+
+          let y = 780;
+
+          // =========================
+          // LOOP OBS
+          // =========================
+
+          const titulo =
+
+            "INFORME QA";
+
+          const tituloWidth =
+
+            titulo.length * 7;
+
+          page.drawText(
+
+            titulo,
+
+            {
+
+              x:
+                (595 / 2)
+                - (tituloWidth / 2),
+
+              y:y,
+
+              size:16
+            }
+          );
+
+          y -= 25;
+          page.drawText(
+
+            `Usuario: ${data[0]?.QA || ""}`,
+
+            {
+              x:40,
+              y:y,
+              size:14
+            }
+          );
+
+          y -= 15;
+
+          page.drawLine({
+
+            start:{
+              x:40,
+              y:y
+            },
+
+            end:{
+              x:550,
+              y:y
+            },
+
+            thickness:1
+          });
+
+          y -= 25;
+          
+          for(           
+
+            const obs of data
+
+          ){
+            // =========================
+            // BLOQUE VISUAL
+            // =========================
+
+            // =========================
+            // NUEVA PAGINA
+            // =========================
+
+            if(y < 250){
+
+              page =
+
+                pdfDoc.addPage([
+                  595,
+                  842
+                ]);
+
+              y = 780;
+            }
+
+            // =========================
+            // TITULO
+            // =========================
+
+            page.drawText(
+
+              `OBSERVACION: ${obs.ID_OBSERVACION}`,
+
+              {
+                x:40,
+                y:y,
+                size:14
+              }
+            );
+
+            y -= 25;
+
+            // =========================
+            // IMAGEN
+            // =========================
+
+            if(obs.IMAGEN_BASE64){
+
+              try{
+
+                const image =
+
+                  await pdfDoc
+                    .embedJpg(
+                      obs.IMAGEN_BASE64
+                    );
+
+                // =========================
+                // CONTENEDOR
+                // =========================
+
+                const maxWidth  = 120;
+                const maxHeight = 180;
+
+                // =========================
+                // DIMENSIONES ORIGINALES
+                // =========================
+
+                const originalWidth  = image.width;
+                const originalHeight = image.height;
+
+                // =========================
+                // ESCALA
+                // =========================
+
+                const scale = Math.min(
+
+                  maxWidth  / originalWidth,
+
+                  maxHeight / originalHeight
+                );
+
+                // =========================
+                // TAMAÑO FINAL
+                // =========================
+
+                const finalWidth  =
+                  originalWidth * scale;
+
+                const finalHeight =
+                  originalHeight * scale;
+
+                // =========================
+                // CENTRADO VERTICAL
+                // =========================
+
+                const offsetY =
+                  (maxHeight - finalHeight) / 2;
+
+                // =========================
+                // DIBUJAR CONTENEDOR
+                // =========================
+
+                // =========================
+                // IMAGEN
+                // =========================
+
+                page.drawImage(
+
+                  image,
+
+                  {
+
+                    x:40,
+
+                    y:
+                      y - 210 + offsetY,
+
+                    width:finalWidth,
+
+                    height:finalHeight
+                  }
+                );
+
+              }catch(err){
+
+                console.error(err);
+              }
+            }
+            // =========================
+            // POSICION TEXTO
+            // =========================
+
+            const textX = 170;
+
+            let textY = y;
+
+            // =========================
+            // MODULO
+            // =========================
+
+            page.drawText(
+
+              `Modulo: ${obs.MODULO || ""}`,
+
+              {
+                x:textX,
+                y:textY,
+                size:12
+              }
+            );
+
+            textY -= 25;
+
+            // =========================
+            // ESTADO
+            // =========================
+
+            page.drawText(
+
+              `Estado: ${obs.ESTADO || ""}`,
+
+              {
+                x:textX,
+                y:textY,
+                size:12
+              }
+            );
+
+            textY -= 25;
+
+            // =========================
+            // PRIORIDAD
+            // =========================
+
+            page.drawText(
+
+              `Prioridad: ${obs.PRIORIDAD || ""}`,
+
+              {
+                x:textX,
+                y:textY,
+                size:12
+              }
+            );
+
+            textY -= 35;
+
+            // =========================
+            // DESCRIPCION
+            // =========================
+
+            page.drawText(
+
+              `Descripcion:`,
+
+              {
+                x:textX,
+                y:textY,
+                size:12
+              }
+            );
+
+            textY -= 20;
+
+            // =========================
+            // TEXTO WRAP
+            // =========================
+
+            const descripcionLineas =
+
+              dividirTexto(
+
+                obs.DESCRIPCION_CORTA,
+
+                90
+              );
+
+            for(
+
+              const linea of descripcionLineas
+
+            ){
+
+              page.drawText(
+
+                linea,
+
+                {
+                  x:textX,
+                  y:textY,
+                  size:10
+                }
+              );
+
+              textY -= 14;
+            }
+
+            // =========================
+            // ESPACIO
+            // =========================
+
+            textY -= 15;
+
+            // =========================
+            // PASOS
+            // =========================
+
+            page.drawText(
+
+              `Pasos:`,
+
+              {
+                x:textX,
+                y:textY,
+                size:12
+              }
+            );
+
+            textY -= 20;
+
+            // =========================
+            // PASOS TEXTO
+            // =========================
+
+            const pasosLineas =
+
+              dividirTexto(
+
+                obs.PASOS_REPRODUCIR,
+
+                90
+              );
+
+            for(
+
+              const linea of pasosLineas
+
+            ){
+
+              page.drawText(
+
+                linea,
+
+                {
+                  x:textX,
+                  y:textY,
+                  size:10
+                }
+              );
+
+              textY -= 14;              
+            }
+
+            // =========================
+            // NUEVA POSICION GLOBAL
+            // =========================
+
+            y = Math.min(
+
+              y - 240,
+
+              textY - 40
+            );
+          }
+          // =========================
+          // SAVE PDF
+          // =========================
+
+          const pdfBytes =
+
+            await pdfDoc.save();
+
+          // =========================
+          // BLOB
+          // =========================
+
+          const blob =
+
+            new Blob(
+
+              [pdfBytes],
+
+              {
+                type:'application/pdf'
+              }
+            );
+
+          // =========================
+          // DOWNLOAD
+          // =========================
+
+          const url =
+
+            URL.createObjectURL(
+              blob
+            );
+
+          const a =
+
+            document.createElement(
+              'a'
+            );
+
+          a.href =
+            url;
+
+          const usuario =
+
+            document.getElementById(
+              "txtNavbarUser"
+            )
+
+            .innerText
+
+            .trim()
+
+            .replace(/\s+/g,"_");
+
+          const rol =
+
+            document.getElementById(
+              "cmbRoles"
+            )
+            .value;
+
+          const fecha =
+
+            new Date()
+
+              .toISOString()
+
+              .replace(/[:.]/g,"-");
+
+          a.download =
+
+            `${usuario}-${rol}-${fecha}.pdf`;
+
+          document.body
+            .appendChild(a);
+
+          a.click();
+
+          a.remove();
+
+          URL.revokeObjectURL(
+            url
+          );
+
+          hideLoading();
+
+        }catch(err){
+
+          hideLoading();
+
+          console.error(err);
+
+          Swal.fire({
+
+            icon:'error',
+
+            title:'PDF Error',
+
+            text:err.message
+          });
+        }
+      }
+    )
+
+    .withFailureHandler(err => {
+
+      hideLoading();
+
+      console.error(err);
+
+      Swal.fire({
+
+        icon:'error',
+
+        title:'Backend Error',
+
+        text:err.message
+      });
+
+    })
+
+    .obtenerDataPDF(ids);
+}
+
+</script>
+

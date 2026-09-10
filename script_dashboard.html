@@ -1,0 +1,1534 @@
+<script>
+function abrirModalExportInforme(){
+
+  bootstrap.Modal
+    .getOrCreateInstance(
+      document.getElementById(
+        "modalExportInforme"
+      )
+    )
+    .show();
+}
+
+function _obtenerPayloadExportInforme(){
+
+  const isDailyView = window.currentAppView === "DAILY";
+  const includeDailyEl = document.getElementById("repIncludeDaily");
+  const includeDaily = includeDailyEl ? !!includeDailyEl.checked : isDailyView;
+
+  const selectedItemIds = Array.from(
+    document.querySelectorAll(
+      isDailyView
+        ? ".chkDaily:checked"
+        : ".chkObs:checked"
+    )
+  ).map(x => x.value);
+
+  const filteredItemIds =
+    (isDailyView
+      ? (window.dailyState && Array.isArray(window.dailyState.data) ? window.dailyState.data : [])
+      : (window.dataObservaciones || [])
+    )
+      .map(x => isDailyView ? x.id : x.ID_OBSERVACION)
+      .filter(Boolean);
+
+  const payload = {
+    fromDate: document.getElementById("repFromDate").value,
+    toDate: document.getElementById("repToDate").value,
+    scope: document.getElementById("repScope").value,
+    selectedItemIds: selectedItemIds,
+    filteredItemIds: filteredItemIds,
+    includeTasks: document.getElementById("repIncludeTasks").checked,
+    includeObservations: document.getElementById("repIncludeObs").checked,
+    includeDaily: includeDaily,
+    includeChats: document.getElementById("repIncludeChats").checked,
+    includeImages: document.getElementById("repIncludeImages").checked,
+    includeStatusHistory: document.getElementById("repIncludeHistory").checked,
+    groupBy: document.getElementById("repGroupBy").value,
+    detailLevel: document.getElementById("repDetailLevel").value,
+    requestedBy: document.getElementById("txtNavbarUser").innerText.trim(),
+    __user: typeof getClientUserContext === "function" ? getClientUserContext() : null
+  };
+
+  if(payload.scope === "SELECTED" && payload.selectedItemIds.length === 0){
+    throw new Error("Seleccione al menos un registro para el alcance seleccionado");
+  }
+
+  if(payload.scope === "DATE_RANGE" && (!payload.fromDate || !payload.toDate)){
+    throw new Error("Complete el rango de fechas");
+  }
+
+  if(!payload.includeTasks && !payload.includeObservations && !payload.includeDaily && !payload.includeChats){
+    throw new Error("Seleccione al menos un tipo de contenido");
+  }
+
+  return payload;
+}
+
+function _mostrarErrorApiInforme(res){
+
+  const error = res && res.error ? res.error : null;
+  const message = error && error.message ? error.message : "Error no controlado";
+
+  Swal.fire({
+    icon: "error",
+    title: error && error.code ? error.code : "Error",
+    text: message
+  });
+}
+
+function previewInformeDesarrollo(){
+
+  let payload = null;
+
+  try{
+    payload = _obtenerPayloadExportInforme();
+  }catch(error){
+
+    Swal.fire({
+      icon: "warning",
+      title: "Validacion",
+      text: error.message
+    });
+    return;
+  }
+
+  showLoading("Generando vista previa...");
+
+  google.script.run
+    .withSuccessHandler(res => {
+
+      hideLoading().then(() => {
+
+        if(!res || !res.ok){
+          _mostrarErrorApiInforme(res);
+          return;
+        }
+
+        const resumen = res.data && res.data.resumen ? res.data.resumen : {};
+
+        console.log("[IMG_DIAGNOSTICS][PREVIEW]", res.data && res.data.imageDiagnostics ? res.data.imageDiagnostics : []);
+
+        Swal.fire({
+          title: "Vista previa informe de desarrollo",
+          width: "92%",
+          html: `
+            <div class="mb-3 text-start">
+              <strong>Resumen:</strong>
+              Tareas ${resumen.totalTareas || 0},
+              Observaciones ${resumen.totalObservaciones || 0},
+              Cerradas ${resumen.totalCerradas || 0}
+            </div>
+            <div style="max-height:70vh;overflow:auto;text-align:left;">
+              ${res.data.htmlPreview || ""}
+            </div>
+          `,
+          showCloseButton: true,
+          showConfirmButton: true,
+          confirmButtonText: "Descargar PDF"
+        }).then(result => {
+          if(result.isConfirmed){
+            descargarInformeDesarrolloPdf();
+          }
+        });
+      });
+ 
+    })
+    .withFailureHandler(err => {
+
+      hideLoading();
+
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: err.message
+      });
+    })
+    .previewExportReport(payload);
+}
+
+function descargarInformeDesarrolloPdf(){
+
+  let payload = null;
+
+  try{
+    payload = _obtenerPayloadExportInforme();
+  }catch(error){
+
+    Swal.fire({
+      icon: "warning",
+      title: "Validacion",
+      text: error.message
+    });
+    return;
+  }
+
+  showLoading("Generando PDF...");
+
+  google.script.run
+    .withSuccessHandler(res => {
+
+      hideLoading();
+
+      if(!res || !res.ok){
+        _mostrarErrorApiInforme(res);
+        return;
+      }
+
+      const pdf = res.data || {};
+
+      console.log("[IMG_DIAGNOSTICS][PDF]", pdf.imageDiagnostics || []);
+
+      const bytes = atob(pdf.base64 || "");
+      const array = new Uint8Array(bytes.length);
+
+      for(let i = 0; i < bytes.length; i++){
+        array[i] = bytes.charCodeAt(i);
+      }
+
+      const blob = new Blob([array], {type: "application/pdf"});
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = pdf.nombreArchivo || "Informe_Desarrollo.pdf";
+
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      URL.revokeObjectURL(url);
+
+      Swal.fire({
+        icon: "success",
+        title: "PDF generado"
+      });
+
+    })
+    .withFailureHandler(err => {
+
+      hideLoading();
+
+      Swal.fire({
+        icon: "error",
+        title: "Error PDF",
+        text: err.message
+      });
+    })
+    .exportReportPdf(payload);
+}
+</script>
+
+<script>
+  window.dashboardTable = null;
+  window.dashboardState = window.dashboardState || {};
+
+  function _escapeRegExp(text){
+    const source = String(text || "");
+    let out = "";
+
+    for(let i = 0; i < source.length; i++){
+      const ch = source[i];
+      const needsEscape = ".*+?^${}()|[]\\".indexOf(ch) >= 0;
+      out += needsEscape ? ("\\" + ch) : ch;
+    }
+
+    return out;
+  }
+
+  function _getDashboardContext(filters, categoria){
+    return `${categoria}_${filters.view || "ACTIVAS"}`;
+  }
+
+  function _getSprintColumnKey(rows = []){
+    const first = rows && rows.length ? rows[0] : null;
+
+    if(!first || typeof first !== "object"){
+      return "";
+    }
+
+    if(Object.prototype.hasOwnProperty.call(first, "SPRINT")){
+      return "SPRINT";
+    }
+
+    if(Object.prototype.hasOwnProperty.call(first, "VALIDACION_RELACIONADA")){
+      return "VALIDACION_RELACIONADA";
+    }
+
+    return "";
+  }
+
+  function _getSprintValue(row){
+    if(!row || typeof row !== "object"){
+      return "";
+    }
+
+    const raw = row.SPRINT || row.VALIDACION_RELACIONADA || "";
+    const value = String(raw || "").trim();
+
+    return value || "BACKLOG";
+  }
+
+  function _parseDashboardDate(value){
+
+    if(value instanceof Date){
+      return value.getTime();
+    }
+
+    if(value === null || value === undefined){
+      return 0;
+    }
+
+    const text = String(value).trim();
+
+    if(!text){
+      return 0;
+    }
+
+    // Espera formato dd/MM/yyyy HH:mm:ss y soporta fecha sin hora.
+    const match = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+
+    if(match){
+      const day = Number(match[1]);
+      const month = Number(match[2]) - 1;
+      const year = Number(match[3]);
+      const hour = Number(match[4] || 0);
+      const minute = Number(match[5] || 0);
+      const second = Number(match[6] || 0);
+
+      return new Date(year, month, day, hour, minute, second).getTime();
+    }
+
+    const fallback = new Date(text).getTime();
+    return Number.isNaN(fallback) ? 0 : fallback;
+  }
+
+  function _populateSelectByValues(selectId, values, selectedValue){
+
+    const select = document.getElementById(selectId);
+
+    const unique = [...new Set(values.filter(Boolean).map(x => String(x).trim()))].sort();
+
+    select.innerHTML = `<option value="TODOS">Todos</option>`
+      + unique.map(v => `<option value="${v}">${v}</option>`).join("");
+
+    if(selectedValue && unique.includes(selectedValue)){
+      select.value = selectedValue;
+    }else{
+      select.value = "TODOS";
+    }
+  }
+
+  function _renderAcciones(item, categoria, isTrashView){
+
+    const id = item.ID_OBSERVACION;
+    const rolActivo = document.getElementById("cmbRoles").value;
+
+    if(categoria === "TAREA"){
+
+      if(isTrashView){
+        return `
+          <button class="btn btn-success btn-sm" onclick="restaurarTarea('${id}')">
+            <i class="bi bi-arrow-counterclockwise"></i>
+          </button>
+        `;
+      }
+
+      const puedeAdministrar = ["PM", "LIDER_QA", "LIDER_DEV"].includes(rolActivo);
+      const tieneAsignados = tareaTieneAsignados(item);
+
+      let botones = `
+        <button class="btn btn-sm btn-primary" onclick="verTarea('${id}')">
+          <i class="bi bi-eye"></i>
+        </button>
+      `;
+
+      if(puedeAdministrar){
+        botones += `
+          <button class="btn btn-warning btn-sm" onclick="editarTarea('${id}')">
+            <i class="bi bi-pencil-square"></i>
+          </button>
+        `;
+
+        if(!tieneAsignados){
+          botones += `
+            <button class="btn btn-danger btn-sm" onclick="eliminarTarea('${id}')">
+              <i class="bi bi-trash3"></i>
+            </button>
+          `;
+        }
+      }
+
+      if(tieneAsignados){
+        botones += `
+          <button class="btn btn-info btn-sm" onclick="abrirComentarios('${id}')">
+            <i class="bi bi-chat-dots"></i>
+          </button>
+        `;
+      }
+
+      return botones;
+    }
+
+    if(isTrashView){
+      return `
+        <button class="btn btn-success btn-sm" onclick="restaurarObservacion('${id}')">
+          <i class="bi bi-arrow-counterclockwise"></i>
+        </button>
+      `;
+    }
+
+    const usuarioActivo = document.getElementById("txtNavbarUser").innerText.trim().toUpperCase();
+    const puedeAdministrar = ["PM", "LIDER_QA", "LIDER_DEV"].includes(rolActivo);
+    const esCreador = String(item.QA || "").trim().toUpperCase() === usuarioActivo;
+    const tieneDevAsignado = item.DEV_ASIGNADO && String(item.DEV_ASIGNADO).trim() !== "";
+
+    let botones = `
+      <button class="btn btn-sm btn-primary" onclick="verObservacion('${id}')">
+        <i class="bi bi-eye"></i>
+      </button>
+    `;
+
+    if(puedeAdministrar || esCreador){
+      botones += `
+        <button class="btn btn-warning btn-sm" onclick="editarObservacion('${id}')">
+          <i class="bi bi-pencil-square"></i>
+        </button>
+      `;
+
+      if(!tieneDevAsignado){
+        botones += `
+          <button class="btn btn-danger btn-sm" onclick="eliminarObservacion('${id}')">
+            <i class="bi bi-trash3"></i>
+          </button>
+        `;
+      }
+    }
+
+    if(tieneDevAsignado){
+      botones += `
+        <button class="btn btn-info btn-sm" onclick="abrirComentarios('${id}')">
+          <i class="bi bi-chat-dots"></i>
+        </button>
+      `;
+    }
+
+    return botones;
+  }
+
+  function saveDashboardPreferencesCurrent(){
+
+    const state = window.dashboardState || {};
+
+    if(!state.contexto || !state.dataKeys || state.dataKeys.length === 0 || !window.dashboardTable){
+      return;
+    }
+
+    const visibleColumns = state.dataKeys.filter(key => {
+      const idx = state.colIndexByKey[key];
+      return window.dashboardTable.column(idx).visible();
+    });
+
+    const payload = {
+      visibleColumns: visibleColumns,
+      estado: document.getElementById("fltEstado").value,
+      prioridad: document.getElementById("fltPrioridad").value,
+      sprint: document.getElementById("fltSprint").value
+    };
+
+    const user = typeof getClientUserContext === "function" ? getClientUserContext() : null;
+    google.script.run.USER_PREF_saveDashboard(state.contexto, payload, user);
+  }
+
+  window.saveDashboardPreferencesCurrent = saveDashboardPreferencesCurrent;
+
+  function _applyDashboardFilters(){
+
+    const state = window.dashboardState || {};
+
+    if(!window.dashboardTable || !state.colIndexByKey){
+      return;
+    }
+
+    const estado = document.getElementById("fltEstado").value;
+    const prioridad = document.getElementById("fltPrioridad").value;
+    const sprint = document.getElementById("fltSprint").value;
+
+    const idxEstado = state.colIndexByKey.ESTADO;
+    const idxPrioridad = state.colIndexByKey.PRIORIDAD;
+    const idxSprint = state.colIndexByKey[state.sprintColumnKey || ""];
+
+    if(idxEstado){
+      const searchEstado = estado === "TODOS" ? "" : `^${_escapeRegExp(estado)}$`;
+      window.dashboardTable.column(idxEstado).search(searchEstado, true, false);
+    }
+
+    if(idxPrioridad){
+      const searchPrioridad = prioridad === "TODOS" ? "" : `^${_escapeRegExp(prioridad)}$`;
+      window.dashboardTable.column(idxPrioridad).search(searchPrioridad, true, false);
+    }
+
+    if(idxSprint){
+      const searchSprint = sprint === "TODOS" ? "" : `^${_escapeRegExp(sprint)}$`;
+      window.dashboardTable.column(idxSprint).search(searchSprint, true, false);
+    }
+
+    window.dashboardTable.draw();
+    saveDashboardPreferencesCurrent();
+  }
+
+  function _buildDropdownColumnas(state, prefs){
+
+    const dropdown = document.getElementById("dropdownColumnas");
+
+    dropdown.innerHTML = "";
+
+    const prefsVisible = Array.isArray(prefs.visibleColumns) ? prefs.visibleColumns : [];
+    const usePrefsVisible = prefsVisible.length > 0;
+
+    state.dataKeys.forEach(key => {
+
+      const colIdx = state.colIndexByKey[key];
+      const checked = usePrefsVisible ? prefsVisible.includes(key) : true;
+
+      window.dashboardTable.column(colIdx).visible(checked);
+
+      const item = document.createElement("label");
+      item.className = "dropdown-item d-flex align-items-center gap-2";
+      item.innerHTML = `
+        <input class="form-check-input m-0" type="checkbox" ${checked ? "checked" : ""} data-col="${key}">
+        <span>${key}</span>
+      `;
+
+      dropdown.appendChild(item);
+    });
+
+    dropdown.querySelectorAll("input[type='checkbox']").forEach(chk => {
+      chk.addEventListener("change", function(){
+        const key = this.getAttribute("data-col");
+        const colIdx = state.colIndexByKey[key];
+        window.dashboardTable.column(colIdx).visible(this.checked);
+        saveDashboardPreferencesCurrent();
+      });
+    });
+  }
+
+  function _buildDynamicTable(data, categoria, filters, prefs){
+
+    const rows = Array.isArray(data) ? data.slice() : [];
+    const state = window.dashboardState || {};
+    const sourceKeys = rows.length ? Object.keys(rows[0]) : [];
+    const tableEl = document.getElementById("tblObservaciones");
+
+      if(!tableEl){
+        return;
+      }
+
+    if($.fn.DataTable.isDataTable("#tblObservaciones")){
+      $("#tblObservaciones").DataTable().clear().destroy();
+    }
+
+    // Reinicia estructura para evitar desajustes de columnas al cambiar rol/vista.
+    if(tableEl){
+      tableEl.innerHTML = "<thead></thead><tbody></tbody>";
+    }
+
+    rows.sort((a, b) => _parseDashboardDate(b && b.FECHA) - _parseDashboardDate(a && a.FECHA));
+
+    const keys = (state.serverColumnOrder || []).length
+      ? state.serverColumnOrder.filter(k => sourceKeys.includes(k))
+      : sourceKeys;
+
+    const isTrashView = filters.view === "ELIMINADAS";
+    const sprintColumnKey = _getSprintColumnKey(rows);
+
+    const thead = document.querySelector("#tblObservaciones thead");
+
+    if(!thead){
+      return;
+    }
+
+    thead.innerHTML = `
+      <tr>
+        <th></th>
+        ${keys.map(k => `<th>${k}</th>`).join("")}
+        <th>Acciones</th>
+      </tr>
+    `;
+
+    const columns = [
+      {
+        data: null,
+        orderable: false,
+        width: "34px",
+        className: "text-center",
+        render: (item) => `
+          <input type="checkbox" class="chkObs" value="${item.ID_OBSERVACION}">
+        `
+      },
+      ...keys.map(k => ({
+        data: k,
+        render: (value) => {
+          if(value === null || value === undefined){
+            return "";
+          }
+          if(typeof value === "object"){
+            return JSON.stringify(value);
+          }
+          return String(value);
+        }
+      })),
+      {
+        data: null,
+        orderable: false,
+        render: (item) => _renderAcciones(item, categoria, isTrashView)
+      }
+    ];
+
+    window.dashboardTable = $('#tblObservaciones').DataTable({
+      destroy: true,
+      responsive: false,
+      scrollX: true,
+      autoWidth: false,
+      pageLength: 10,
+      data: rows,
+      columns: columns
+    });
+
+    window.dashboardTable.column(0).visible(true);
+
+    // Columnas redimensionables tipo Excel (colResizable, requiere scrollX activo).
+    if($.fn.colResizable){
+      $('#tblObservaciones').colResizable({
+        liveDrag: true,
+        minWidth: 60,
+        resizeMode: "overflow",
+        disabledColumns: [0]
+      });
+    }
+
+    const colIndexByKey = {};
+    keys.forEach((k, i) => {
+      colIndexByKey[k] = i + 1;
+    });
+
+    const contexto = _getDashboardContext(filters, categoria);
+
+    window.dashboardState = {
+      contexto: contexto,
+      dataKeys: keys,
+      colIndexByKey: colIndexByKey,
+      sprintColumnKey: sprintColumnKey
+    };
+
+    _populateSelectByValues("fltEstado", rows.map(x => x.ESTADO), prefs.estado || "TODOS");
+    _populateSelectByValues("fltPrioridad", rows.map(x => x.PRIORIDAD), prefs.prioridad || "TODOS");
+
+    const hasSprintColumn = !!(sprintColumnKey && colIndexByKey[sprintColumnKey]);
+    const sprintWrap = document.getElementById("fltSprintWrap");
+
+    if(sprintWrap){
+      sprintWrap.classList.toggle("d-none", !hasSprintColumn);
+    }
+
+    if(hasSprintColumn){
+      _populateSelectByValues("fltSprint", rows.map(x => _getSprintValue(x)), prefs.sprint || "TODOS");
+      document.getElementById("fltSprint").onchange = _applyDashboardFilters;
+    }else{
+      const sprintSelect = document.getElementById("fltSprint");
+
+      if(sprintSelect){
+        sprintSelect.innerHTML = `<option value="TODOS">Todos</option>`;
+        sprintSelect.value = "TODOS";
+        sprintSelect.onchange = null;
+      }
+    }
+
+    document.getElementById("fltEstado").onchange = _applyDashboardFilters;
+    document.getElementById("fltPrioridad").onchange = _applyDashboardFilters;
+
+    _buildDropdownColumnas(window.dashboardState, prefs || {});
+    _applyDashboardFilters();
+  }
+
+  function _aplicarEstadoVista(categoria, filters){
+
+    if(categoria === "TAREA"){
+
+      $("#DshCategoria").val("TAREA");
+      $("#chatTipo").val("TAREA");
+
+      $("#btnNuevaObservacion")
+        .html('<i class="bi bi-plus-circle-fill me-1"></i>Nueva Tarea')
+        .show();
+
+      $("#btnPreviewInforme").show();
+
+      $("#guardaNuevosRegistros")
+        .text("Guardar Tarea")
+        .attr("onclick", "guardarTarea()");
+
+      $("#btnPapelera")
+        .html('<i class="bi bi-trash3 me-2"></i>Papelera Tareas')
+        .attr("onclick", `loadDashboard({view:'ELIMINADAS',categoria:'TAREA'})`);
+
+      $("#btnPapelera").removeClass("d-none");
+
+      return;
+    }
+
+    $("#DshCategoria").val("OBSERVACION");
+    $("#chatTipo").val("OBSERVACION");
+
+    $("#btnNuevaObservacion")
+      .html('<i class="bi bi-plus-circle-fill me-1"></i>Nueva Observación');
+
+    $("#guardaNuevosRegistros")
+      .text("Guardar Observación")
+      .attr("onclick", "guardarObservacion()");
+
+    $("#btnPapelera")
+      .html('<i class="bi bi-trash3 me-2"></i>Papelera Observaciones')
+      .attr("onclick", `loadDashboard({view:'ELIMINADAS',categoria:'OBSERVACION'})`);
+
+    $("#btnPapelera").removeClass("d-none");
+
+    if(filters.view === "ELIMINADAS"){
+      $("#btnNuevaObservacion").hide();
+      $("#btnPreviewInforme").hide();
+    }else{
+      $("#btnNuevaObservacion").show();
+      $("#btnPreviewInforme").show();
+    }
+  }
+
+  function cargarTablaObservaciones(
+    filters = {}
+  ){
+
+    const requestId = (window.dashboardDataRequestSeq || 0) + 1;
+    window.dashboardDataRequestSeq = requestId;
+
+    const localFilters = Object.assign({}, filters || {});
+
+    showLoading("Cargando tabla...");
+
+    const categoria = localFilters.categoria || $("#DshCategoria").val() || "OBSERVACION";
+
+    localFilters.categoria = categoria;
+
+    _aplicarEstadoVista(categoria, localFilters);
+
+    google.script.run
+      .withSuccessHandler(pack => {
+
+        if(requestId !== window.dashboardDataRequestSeq){
+          hideLoading();
+          return;
+        }
+
+        if(window.currentAppView !== "DASHBOARD"){
+          hideLoading();
+          return;
+        }
+
+        if(!document.getElementById("tblObservaciones")){
+          hideLoading();
+          return;
+        }
+
+        const data = pack && Array.isArray(pack.data)
+          ? pack.data
+          : [];
+
+        const preferencias =
+          pack && pack.preferencias
+            ? pack.preferencias
+            : {};
+
+        const columnOrder =
+          pack && Array.isArray(pack.columnOrder)
+            ? pack.columnOrder
+            : [];
+
+        window.dataObservaciones = data;
+        window.dashboardState = window.dashboardState || {};
+        window.dashboardState.serverColumnOrder = columnOrder;
+        _buildDynamicTable(data, categoria, localFilters, preferencias);
+        if(typeof bindDashboardTableScrollButtons === "function"){
+          bindDashboardTableScrollButtons();
+        }
+        hideLoading();
+
+      })
+      .withFailureHandler(err => {
+        hideLoading();
+        console.error(err);
+        Swal.fire({icon:'error',title:'Error',text:err.message});
+      })
+      .DASHBOARD_loadData(
+        localFilters,
+        typeof getClientUserContext === "function" ? getClientUserContext() : null
+      );
+  }
+
+  window.cargarTablaObservaciones = cargarTablaObservaciones;
+
+  function _getScrollableTableArea(){
+
+    if(window.dashboardTable && typeof window.dashboardTable.table === "function"){
+
+      const tableContainer = window.dashboardTable.table().container();
+
+      if(tableContainer){
+        const dtBody = tableContainer.querySelector(".dt-scroll-body, .dataTables_scrollBody");
+
+        if(dtBody){
+          return dtBody;
+        }
+      }
+    }
+
+    return document.querySelector(".dt-scroll-body")
+      || document.querySelector(".dataTables_scrollBody")
+      || document.getElementById("tblObservacionesWrap");
+  }
+
+  function _bindHoldScrollTable(){
+
+    const leftBtn = document.getElementById("btnScrollTablaLeft");
+    const rightBtn = document.getElementById("btnScrollTablaRight");
+
+    if(!leftBtn || !rightBtn){
+      return;
+    }
+
+    const setupHold = (btn, direction) => {
+
+      let timer = null;
+
+      const start = () => {
+        const area = _getScrollableTableArea();
+
+        console.log("[SCROLL] target:", area ? area.className : "none");
+
+        if(!area){
+          return;
+        }
+
+        if(timer){
+          clearInterval(timer);
+        }
+
+        timer = setInterval(() => {
+          area.scrollLeft += (direction * 16);
+        }, 16);
+      };
+
+      const stop = () => {
+        if(timer){
+          clearInterval(timer);
+          timer = null;
+        }
+      };
+
+      btn.onmousedown = start;
+      btn.onmouseup = stop;
+      btn.onmouseleave = stop;
+      btn.ontouchstart = start;
+      btn.ontouchend = stop;
+    };
+
+    setupHold(leftBtn, -1);
+    setupHold(rightBtn, 1);
+  }
+
+  window.bindDashboardTableScrollButtons = _bindHoldScrollTable;
+</script>
+
+<script>
+console.log("script_dashboard cargado");
+
+</script>
+
+<script>
+function verObservacion(id){
+
+  showLoading(
+    "Cargando observación..."
+  );
+  
+  console.log(
+     typeof google.script.run.getObservacionById
+  );
+
+  document.body.style.paddingRight ="0px";  
+
+  google.script.run
+
+    .withSuccessHandler(function(obs){
+      
+      console.log(obs);
+
+      let imageUrl = "";
+
+      if(obs.CAPTURAS){
+
+        const match =
+          obs.CAPTURAS.match(
+            /[-\w]{25,}/
+          );
+
+        if(match){
+
+          const fileId = match[0];
+
+          imageUrl =
+            "https://lh3.googleusercontent.com/d/" +
+            fileId;
+        }
+      }
+
+    document.getElementById(
+      "detalleObservacion"
+    ).innerHTML = `
+
+    <div class="container-fluid">
+
+      <div class="row">
+
+        <!-- IMAGEN -->
+        <div class="col-md-4 text-center">
+
+          ${
+            imageUrl
+
+            ?
+
+            `<img
+              src="${imageUrl}"
+              class="img-fluid rounded border shadow-sm"
+              style="
+                max-height:500px;
+                object-fit:contain;
+              "
+            >`
+
+            :
+
+            `<div class="text-muted">
+              Sin imagen
+            </div>`
+          }
+
+        </div>
+
+        <!-- TEXTO -->
+        <div class="col-md-8">
+
+          <h5 class="mb-3">
+            ${obs.ID_OBSERVACION}
+          </h5>
+
+          <div class="mb-2">
+            <b>QA:</b>
+            ${obs.QA || ""}
+          </div>
+
+          <div class="mb-2">
+            <b>Módulo:</b>
+            ${obs.MODULO || ""}
+          </div>
+
+          <div class="mb-2">
+            <b>Estado:</b>
+            ${obs.ESTADO || ""}
+          </div>
+
+          <div class="mb-2">
+            <b>Prioridad:</b>
+            ${obs.PRIORIDAD || ""}
+          </div>
+
+          <hr>
+
+          <div class="mb-3">
+
+            <label class="fw-bold">
+              Descripción
+            </label>
+
+            <div class="border rounded p-2 bg-light">
+
+              ${(obs.DESCRIPCION_CORTA || "")
+                .replace(/\n/g,"<br>")}
+
+            </div>
+
+          </div>
+
+          <div>
+
+            <label class="fw-bold">
+              Pasos
+            </label>
+
+            <div class="border rounded p-2 bg-light">
+
+              ${(obs.PASOS_REPRODUCIR || "")
+                .replace(/\n/g,"<br>")}
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+    `;
+
+      hideLoading();
+
+      bootstrap.Modal
+      .getOrCreateInstance(
+
+        document.getElementById(
+          "modalObservacion"
+        )
+
+      )
+      .show();
+
+
+    })
+  .getObservacionById(id);
+  
+}
+
+</script>
+
+<script>
+
+function previewInforme(){
+
+  // =========================
+  // IDS
+  // =========================
+
+  const ids =
+
+    Array.from(
+
+      document.querySelectorAll(
+        ".chkObs:checked"
+      )
+
+    )
+
+    .map(x => x.value);
+
+  // =========================
+  // VALIDAR
+  // =========================
+
+  if(ids.length === 0){
+
+    Swal.fire({
+
+      icon:'warning',
+
+      title:'Seleccione observaciones'
+    });
+
+    return;
+  }
+
+  // =========================
+  // LOADING
+  // =========================
+
+  showLoading(
+    "Generando preview..."
+  );
+
+  // =========================
+  // BACKEND
+  // =========================
+
+  google.script.run
+
+    .withSuccessHandler(html => {
+
+      hideLoading();
+
+      // =========================
+      // MODAL PREVIEW
+      // =========================
+
+      Swal.fire({
+
+        title:'Preview Informe',
+
+        width:'90%',
+
+        html:`
+
+          <div
+            style="
+              max-height:70vh;
+              overflow:auto;
+              text-align:left;
+            "
+          >
+
+            ${html}
+
+          </div>
+        `,
+
+        showCloseButton:true,
+
+        showConfirmButton:true,
+
+        confirmButtonText:
+          'Descargar PDF'
+
+      }).then(result => {
+
+        if(result.isConfirmed){
+
+          generarPDFLib(ids);
+        }
+      });
+
+    })
+
+    .withFailureHandler(err => {
+
+      hideLoading();
+
+      console.error(err);
+
+      Swal.fire({
+
+        icon:'error',
+
+        title:'Error',
+
+        text:err.message
+      });
+
+    })
+
+    .generarPreviewInforme(ids);
+}
+
+</script>
+
+
+<script>
+
+function descargarPDF(ids){
+
+  showLoading(
+    "Generando PDF..."
+  );
+
+  google.script.run
+
+    .withSuccessHandler(res => {
+
+      hideLoading();
+
+      // =========================
+      // BASE64 -> BLOB
+      // =========================
+
+      const bytes =
+
+        atob(res.base64);
+
+      const array =
+
+        new Uint8Array(
+          bytes.length
+        );
+
+      for(
+
+        let i = 0;
+
+        i < bytes.length;
+
+        i++
+
+      ){
+
+        array[i] =
+          bytes.charCodeAt(i);
+      }
+
+      // =========================
+      // PDF BLOB
+      // =========================
+
+      const blob =
+
+        new Blob(
+
+          [array],
+
+          {
+            type:'application/pdf'
+          }
+        );
+
+      // =========================
+      // URL
+      // =========================
+
+      const url =
+
+        URL.createObjectURL(
+          blob
+        );
+
+      // =========================
+      // DOWNLOAD
+      // =========================
+
+      const a =
+        document.createElement(
+          'a'
+        );
+
+      a.href =
+        url;
+
+      a.download =
+        res.nombre;
+
+      document.body
+        .appendChild(a);
+
+      a.click();
+
+      a.remove();
+
+      URL.revokeObjectURL(
+        url
+      );
+
+      // =========================
+      // SUCCESS
+      // =========================
+
+      Swal.fire({
+
+        icon:'success',
+
+        title:'PDF generado'
+      });
+
+    })
+
+    .withFailureHandler(err => {
+
+      hideLoading();
+
+      console.error(err);
+
+      Swal.fire({
+
+        icon:'error',
+
+        title:'Error PDF',
+
+        text:err.message
+      });
+
+    })
+
+    .generarPDF(ids);
+}
+
+</script>
+
+
+
+<script>
+
+function editarObservacion(id){
+
+  const obs = window.dataObservaciones.find(
+
+    x =>
+
+      String(x.ID_OBSERVACION) ===
+      String(id)
+
+  );
+
+  if(!obs){
+    console.error(
+      "No se encontró la observación"
+    );
+    return;
+  }
+
+  showLoading(
+    "Cargando observación..."
+  );
+
+  //======================
+  //Edicion de lider dev
+  //=======================
+  const rolActivo =
+    document
+      .getElementById(
+        "cmbRoles"
+      )
+      .value;
+
+  window.obsTemporal =
+    obs;
+
+  google.script.run
+
+    .withSuccessHandler( async html => {
+      
+      renderView(html);
+
+      cargarDatosObservacion(
+        window.obsTemporal
+      );
+
+      aplicarPermisosEdicion(
+        rolActivo,
+        window.obsTemporal
+      );
+
+      await cargarDevs();
+
+      document
+      .getElementById(
+        "obsDevAsignado"
+      )
+      .value =
+        obs.DEV_ASIGNADO || "";
+        
+      hideLoading();
+
+    })
+
+    .getView(
+      "view_observacion_editar"
+    );
+}
+
+</script>
+
+<script>
+function aplicarPermisosEdicion(
+  rolActivo,
+  obs
+){
+
+  // ====================
+  // LIDER DEV
+  // ====================
+
+  if(
+    rolActivo === "LIDER_DEV"
+  ){
+
+    document
+      .getElementById(
+        "seccionAsignacionDev"
+      )
+      .classList
+      .remove("d-none");
+
+    bloquearCamposLider();
+    return;
+  }
+
+  // ====================
+  // LIDER QA
+  // ====================
+
+  if(
+    rolActivo === "LIDER_QA"
+  ){
+
+    document
+      .getElementById(
+        "seccionAsignacionDev"
+      )
+      .classList
+      .remove("d-none");
+
+
+    bloquearCamposLider();
+
+    return;
+  }
+
+
+  // ====================
+  // QA
+  // ====================
+
+  if(
+    rolActivo === "QA"
+  ){
+
+    document
+      .getElementById(
+        "seccionAsignacionDev"
+      )
+      .classList
+      .add("d-none");
+
+    return;
+  }
+
+  // ====================
+  // DEV
+  // ====================
+
+  if(
+    rolActivo === "DEV"
+  ){
+
+    document
+      .getElementById(
+        "seccionAsignacionDev"
+      )
+      .classList
+      .add("d-none");
+
+    return;
+  }
+
+}
+</script>
+
+<script>
+function bloquearCamposLider(){
+
+  document
+    .getElementById(
+      "obsModuloEdit"
+    )
+    .readOnly = true;
+
+  document
+    .getElementById(
+      "obsDescEdit"
+    )
+    .readOnly = true;
+
+  document
+    .getElementById(
+      "obsPasosEdit"
+    )
+    .readOnly = true;
+
+}
+</script>
+
+<script>
+function restaurarObservacion(id){
+
+  Swal.fire({
+    title: '¿Restaurar observación?',
+    text: `Se restaurará la observación ${id}`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, restaurar',
+    cancelButtonText: 'Cancelar'
+  })
+  .then(result => {
+
+    if(!result.isConfirmed){
+      return;
+    }
+
+    showLoading(
+      "Restaurando observación..."
+    );
+
+    google.script.run
+
+      .withSuccessHandler(() => {
+
+        hideLoading();
+
+        cargarTablaObservaciones({
+          view:"ELIMINADAS"
+        });
+
+        Swal.fire({
+          icon:'success',
+          title:'Restaurada',
+          text:'La observación fue restaurada correctamente.',
+          showConfirmButton:false,
+          timer:2000,
+          timerProgressBar:true
+        });
+
+      })
+
+      .withFailureHandler(error => {
+
+        hideLoading();
+
+        Swal.fire({
+          icon:'error',
+          title:'Error',
+          text:error.message || String(error),
+          showConfirmButton:false,
+          timer:3000,
+          timerProgressBar:true
+        });
+
+      })
+
+      .OBS_SERVICE_restore(id);
+
+  });
+}
+</script>
+
+<script>
+function limpiarBootstrapModal(){
+
+  document.body.style.paddingRight = "";
+
+}
+
+</script>
+
+//<script>
+//setInterval(() => {
+//
+//  const padding =
+//    getComputedStyle(
+//      document.body
+//    ).paddingRight;
+//
+//  document.body.style.paddingRight =
+//          "0px";
+//          
+//  console.log(
+//    "BODY PADDING:",
+//    padding
+//  );
+//
+//}, 1000);
+//</script>
+
+

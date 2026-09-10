@@ -1,0 +1,427 @@
+<script>
+window.dailyState = {
+  data: [],
+  helpSummary: [],
+  helpStats: {helpTotal: 0, uniqueCount: 0},
+  modalMode: "CREATE",
+  activeRecord: null,
+  reminderKey: ""
+};
+
+function _dailyEscape(value){
+  return String(value === null || value === undefined ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function _dailyDestroyTable(){
+  if($.fn.DataTable.isDataTable("#tblDailyScrum")){
+    $("#tblDailyScrum").DataTable().clear().destroy();
+  }
+}
+
+function _dailyCurrentUser(){
+  const user = window.currentUser || {};
+
+  return {
+    nombre: String(user.nombre || "").trim(),
+    rol: String(user.rol || "").trim(),
+    roles: String(user.roles || user.rol || "").trim()
+  };
+}
+
+function _dailySetReadOnly(isReadOnly){
+  const root = document.getElementById("dailyModalBody");
+
+  if(!root){
+    return;
+  }
+
+  root.querySelectorAll("textarea, input, select").forEach(el => {
+    if(el.type === "hidden"){
+      return;
+    }
+
+    el.disabled = !!isReadOnly;
+  });
+
+  const saveBtn = document.getElementById("btnGuardarDailyScrum");
+
+  if(saveBtn){
+    saveBtn.classList.toggle("d-none", !!isReadOnly);
+  }
+}
+
+function _dailyFillModal(record, mode){
+  const data = record || {};
+  const user = _dailyCurrentUser();
+  const fecha = String(data.fecha || _dailyTodayKey());
+  const helpValue = String(data.necesitoAyuda || "").trim();
+  const normalizedHelpValue = /^(SI|NO)$/i.test(helpValue) ? helpValue.charAt(0).toUpperCase() + helpValue.slice(1).toLowerCase() : "";
+
+  window.dailyState.modalMode = mode || "CREATE";
+  window.dailyState.activeRecord = data;
+
+  document.getElementById("dailyId").value = String(data.id || "");
+  document.getElementById("dailyFecha").value = fecha;
+  document.getElementById("dailyUsuario").value = String(data.usuario || user.nombre || "");
+  document.getElementById("dailyRol").value = String(data.rol || user.rol || "");
+  document.getElementById("dailyFechaLabel").value = fecha;
+  document.getElementById("dailyAvanceHoy").value = String(data.avanceHoy || "");
+  document.getElementById("dailyProximoPaso").value = String(data.proximoPaso || "");
+  document.getElementById("dailyBloqueo").value = String(data.bloqueo || "");
+  document.getElementById("dailyNecesitoAyuda").value = normalizedHelpValue;
+
+  _dailySetReadOnly(mode === "VIEW");
+
+  const title = document.querySelector("#modalDailyScrum .modal-title");
+  if(title){
+    title.textContent = mode === "CREATE" ? "Nuevo daily scrum" : (mode === "VIEW" ? "Daily scrum (solo lectura)" : "Editar daily scrum");
+  }
+
+  window.dailyState.savedLastAction = false;
+  window.dailyState.showCloseReminder = mode === "CREATE";
+
+  bootstrap.Modal
+    .getOrCreateInstance(document.getElementById("modalDailyScrum"))
+    .show();
+}
+
+function _dailyTodayKey(){
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function _dailyRenderHelpSummary(items){
+  const list = Array.isArray(items) ? items : [];
+  const box = document.getElementById("dailyHelpSummary");
+  const count = document.getElementById("dailyHelpCount");
+  const totals = document.getElementById("dailyHelpTotals");
+  const stats = window.dailyState.helpStats || {helpTotal: 0, uniqueCount: 0};
+  const totalHelp = Number(stats.helpTotal || 0);
+
+  if(count){
+    count.innerText = String(totalHelp);
+  }
+
+  if(totals){
+    totals.textContent = `Total de peticiones de ayuda: ${totalHelp}`;
+  }
+
+  if(!box){
+    return;
+  }
+
+  box.innerHTML = "";
+}
+
+function _dailyRenderTable(rows){
+  _dailyDestroyTable();
+
+  const table = document.getElementById("tblDailyScrum");
+
+  if(table){
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th></th>
+          <th>Fecha</th>
+          <th>Usuario</th>
+          <th>Rol</th>
+          <th>Avance hoy</th>
+          <th>Próximo paso</th>
+          <th>Bloqueo</th>
+          <th>Necesito ayuda</th>
+          <th>Actualizado</th>
+          <th style="min-width:180px;">Acciones</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+  }
+
+  const list = Array.isArray(rows) ? rows : [];
+
+  $('#tblDailyScrum').DataTable({
+    destroy: true,
+    responsive: false,
+    scrollX: true,
+    autoWidth: false,
+    pageLength: 10,
+    data: list,
+    columns: [
+      {
+        data: null,
+        orderable: false,
+        searchable: false,
+        width: "48px",
+        render: row => `<input type="checkbox" class="chkDaily" value="${_dailyEscape(row.id || "")}">`
+      },
+      {data: "fecha"},
+      {data: "usuario"},
+      {data: "rol"},
+      {data: "avanceHoy"},
+      {data: "proximoPaso"},
+      {data: "bloqueo"},
+      {data: "necesitoAyuda"},
+      {data: "actualizadoAt"},
+      {
+        data: null,
+        orderable: false,
+        searchable: false,
+        width: "180px",
+        render: row => {
+          const escapedId = String(row.id || "").replace(/'/g, "\\'");
+          const canManage = !!row.canManage;
+
+          return `
+            <div class="d-inline-flex flex-nowrap gap-1 align-items-center">
+              <button class="btn btn-sm btn-primary" title="Ver" onclick="verDailyScrum('${escapedId}')"><i class="bi bi-eye"></i></button>
+              ${canManage ? `<button class="btn btn-sm btn-warning" title="Editar" onclick="editarDailyScrum('${escapedId}')"><i class="bi bi-pencil-square"></i></button>` : ""}
+            </div>
+          `;
+        }
+      }
+    ]
+  });
+}
+
+function _dailyFindRow(id){
+  return (window.dailyState.data || []).find(x => String(x.id || "") === String(id || ""));
+}
+
+function abrirModalDailyScrum(){
+  const user = _dailyCurrentUser();
+  const today = _dailyTodayKey();
+  const todayRecord = (window.dailyState.data || []).find(x => String(x.fecha || "") === today && String(x.usuario || "").trim().toUpperCase() === user.nombre.toUpperCase());
+
+  if(todayRecord){
+    _dailyFillModal(todayRecord, "EDIT");
+    return;
+  }
+
+  _dailyFillModal({
+    fecha: today,
+    usuario: user.nombre,
+    rol: user.rol,
+    avanceHoy: "",
+    proximoPaso: "",
+    bloqueo: "",
+    necesitoAyuda: ""
+  }, "CREATE");
+}
+
+function verDailyScrum(id){
+  const row = _dailyFindRow(id);
+
+  if(!row){
+    return;
+  }
+
+  _dailyFillModal(row, "VIEW");
+}
+
+function editarDailyScrum(id){
+  const row = _dailyFindRow(id);
+
+  if(!row){
+    return;
+  }
+
+  if(!row.canManage){
+    Swal.fire({icon:"warning", title:"Sin permisos", text:"Solo puedes editar tus propios daily scrum."});
+    return;
+  }
+
+  _dailyFillModal(row, "EDIT");
+}
+
+function _dailyValidatePayload(payload){
+  const required = [
+    {key: "avanceHoy", label: "¿Qué avancé hoy?"},
+    {key: "proximoPaso", label: "¿Qué haré después?"},
+    {key: "bloqueo", label: "¿Tengo algún bloqueo?"},
+    {key: "necesitoAyuda", label: "Necesito ayuda"}
+  ];
+
+  const missing = required.filter(item => !String(payload[item.key] || "").trim());
+
+  if(missing.length){
+    throw new Error(`VALIDATION_ERROR: debe responder las 4 preguntas. Faltan: ${missing.map(x => x.label).join(", ")}`);
+  }
+}
+
+function guardarDailyScrum(){
+
+  if(window.dailyState.modalMode === "VIEW"){
+    return;
+  }
+
+  const payload = {
+    id: String(document.getElementById("dailyId").value || "").trim(),
+    fecha: String(document.getElementById("dailyFecha").value || _dailyTodayKey()).trim(),
+    usuario: String(document.getElementById("dailyUsuario").value || "").trim(),
+    rol: String(document.getElementById("dailyRol").value || "").trim(),
+    avanceHoy: String(document.getElementById("dailyAvanceHoy").value || "").trim(),
+    proximoPaso: String(document.getElementById("dailyProximoPaso").value || "").trim(),
+    bloqueo: String(document.getElementById("dailyBloqueo").value || "").trim(),
+    necesitoAyuda: String(document.getElementById("dailyNecesitoAyuda").value || "").trim()
+  };
+
+  if(payload.necesitoAyuda !== "Si" && payload.necesitoAyuda !== "No"){
+    Swal.fire({icon:"warning", title:"Validacion", text:"Debes seleccionar Si o No en Necesito ayuda."});
+    return;
+  }
+
+  try{
+    _dailyValidatePayload(payload);
+  }catch(error){
+    Swal.fire({icon:"warning", title:"Validacion", text: error.message || String(error)});
+    return;
+  }
+
+  showLoading("Guardando daily scrum...");
+
+  runServer(
+    "DAILY_save",
+    payload,
+    typeof getClientUserContext === "function" ? getClientUserContext() : null
+  )
+  .then(() => {
+    window.dailyState.savedLastAction = true;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("modalDailyScrum")).hide();
+    return refreshDailyScrum();
+  })
+  .then(() => {
+    Swal.fire({icon:"success", title:"Guardado", timer:1200, showConfirmButton:false});
+  })
+  .catch(err => {
+    Swal.fire({icon:"error", title:"Error", text: err.message || String(err)});
+  })
+  .finally(() => {
+    hideLoading();
+  });
+}
+
+function _dailyBuildReminderKey(){
+  const user = _dailyCurrentUser();
+  return `dailyReminder:${_dailyTodayKey()}:${user.nombre}:${user.rol}`;
+}
+
+function refreshDailyReminder(options = {}){
+  const silent = !!(options && options.silent);
+  const key = _dailyBuildReminderKey();
+
+  if(!key || !key.includes(":")){
+    return Promise.resolve(null);
+  }
+
+  if(sessionStorage.getItem(key) === "1"){
+    return Promise.resolve(null);
+  }
+
+  return runServer(
+    "DAILY_hasToday",
+    typeof getClientUserContext === "function" ? getClientUserContext() : null
+  )
+  .then(res => {
+    const hasToday = !!(res && res.hasToday);
+
+    if(hasToday){
+      sessionStorage.setItem(key, "1");
+      return null;
+    }
+
+    sessionStorage.setItem(key, "1");
+
+    if(silent){
+      return null;
+    }
+
+    return Swal.fire({
+      icon: "info",
+      title: "Daily Scrum pendiente",
+      text: "Es necesario registrar evidencia del daily scrum.",
+      showCancelButton: true,
+      confirmButtonText: "Ir a Daily Scrum",
+      cancelButtonText: "Cerrar"
+    }).then(result => {
+      if(result.isConfirmed && typeof loadDailyScrum === "function"){
+        loadDailyScrum();
+      }
+    });
+  })
+  .catch(error => {
+    console.error(error);
+    return null;
+  });
+}
+
+window.refreshDailyReminder = refreshDailyReminder;
+
+function _dailyRenderTableAndSummary(pack){
+  const payload = pack && typeof pack === "object" ? pack : {};
+  window.dailyState.data = Array.isArray(payload.data) ? payload.data : [];
+  window.dailyState.helpSummary = Array.isArray(payload.helpSummary) ? payload.helpSummary : [];
+  window.dailyState.helpStats = payload.helpSummaryStats || {helpTotal: 0, uniqueCount: 0};
+
+  _dailyRenderHelpSummary(window.dailyState.helpSummary);
+  _dailyRenderTable(window.dailyState.data);
+}
+
+function initDailyScrum(){
+  const modal = document.getElementById("modalDailyScrum");
+
+  if(modal && !modal.dataset.dailyBind){
+    modal.addEventListener("hidden.bs.modal", () => {
+      if(window.dailyState.showCloseReminder && !window.dailyState.savedLastAction && window.dailyState.modalMode === "CREATE"){
+        Swal.fire({
+          icon: "info",
+          title: "Daily Scrum pendiente",
+          text: "Es necesario registrar evidencia del daily scrum. Puedes hacerlo desde el boton del sidebar en cualquier momento.",
+          confirmButtonText: "Entendido"
+        });
+      }
+
+      window.dailyState.showCloseReminder = false;
+      window.dailyState.savedLastAction = false;
+    });
+
+    modal.dataset.dailyBind = "1";
+  }
+
+  refreshDailyScrum();
+}
+
+function refreshDailyScrum(){
+  showLoading("Cargando daily scrum...");
+
+  return runServer(
+    "DAILY_loadData",
+    {},
+    typeof getClientUserContext === "function" ? getClientUserContext() : null
+  )
+  .then(pack => {
+    _dailyRenderTableAndSummary(pack || {});
+  })
+  .catch(err => {
+    Swal.fire({icon:"error", title:"Error", text: err.message || String(err)});
+  })
+  .finally(() => {
+    hideLoading();
+  });
+}
+
+window.initDailyScrum = initDailyScrum;
+window.refreshDailyScrum = refreshDailyScrum;
+window.abrirModalDailyScrum = abrirModalDailyScrum;
+window.verDailyScrum = verDailyScrum;
+window.editarDailyScrum = editarDailyScrum;
+window.guardarDailyScrum = guardarDailyScrum;
+</script>

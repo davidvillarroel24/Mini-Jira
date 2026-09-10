@@ -1,0 +1,277 @@
+<div class="container-fluid p-4">
+
+  <div class="card shadow">
+
+    <!-- HEADER -->
+    <div class="card-header d-flex justify-content-between align-items-center">
+
+      <h4 id="tituloObservacion" class="m-0">
+        Nueva Observación
+      </h4>
+
+      <button
+        id="btnObservacionVolver"
+        class="btn btn-secondary"
+        onclick="loadDashboard()"
+      >
+        Volver
+      </button>
+
+    </div>
+
+    <!-- BODY -->
+    <div class="card-body">
+
+      <div class="row g-4">
+
+        <!-- IMAGEN -->
+        <div class="col-md-4">
+
+          <div
+            class="
+              border
+              rounded
+              p-3
+              text-center
+              bg-light
+            "
+            style="
+              min-height:500px;
+            "
+          >
+
+            <img
+              id="previewImagen"
+              class="img-fluid rounded shadow-sm"
+              style="
+                max-height:450px;
+                object-fit:contain;
+                display:none;
+              "
+            >
+
+            <div
+              id="textoPreview"
+              class="text-muted mt-5"
+            >
+              Vista previa imagen
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- FORM -->
+        <div class="col-md-8">
+
+          <!-- MODULO -->
+          <div class="mb-3">
+
+            <label class="form-label fw-bold">
+              Módulo
+            </label>
+
+            <input
+              id="obsModulo"
+              class="form-control"
+            >
+
+          </div>
+
+          <!-- DESCRIPCION -->
+          <div class="mb-3">
+
+            <label class="form-label fw-bold">
+              Descripción
+            </label>
+
+            <textarea
+              id="obsDesc"
+              class="form-control"
+              rows="5"
+            ></textarea>
+
+          </div>
+
+          <!-- PASOS -->
+          <div class="mb-3">
+
+            <label class="form-label fw-bold">
+              Pasos para reproducir
+            </label>
+
+            <textarea
+              id="obsPasos"
+              class="form-control"
+              rows="7"
+            ></textarea>
+
+          </div>
+
+          <!-- PRIORIDAD -->
+          <div class="mb-4">
+
+            <label class="form-label fw-bold">
+              Prioridad
+            </label>
+
+            <select
+              id="obsPrioridad"
+              class="form-select"
+            >
+
+              <option>
+                BAJA
+              </option>
+
+              <option selected>
+                MEDIA
+              </option>
+
+              <option>
+                ALTA
+              </option>
+
+              <option>
+                CRITICA
+              </option>
+
+            </select>
+
+          </div>
+
+          <!-- IMAGEN -->
+          <div class="mb-4">
+
+            <label class="form-label fw-bold">
+              Captura
+            </label>
+
+            <input
+              type="file"
+              id="obsImagen"
+              class="form-control"
+              accept="image/*"
+            >
+
+          </div>
+
+          <!-- BOTONES -->
+          <div class="d-flex gap-2">
+
+            <button
+              id="guardaNuevosRegistros"
+              class="btn btn-success"
+              onclick="guardarObservacion()"
+            >
+              Guardar Observación
+            </button>
+
+            <button
+              class="btn btn-outline-secondary"
+              onclick="limpiarFormularioObs()"
+            >
+              Limpiar
+            </button>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+
+document
+  .getElementById(
+    "obsImagen"
+  )
+
+  .addEventListener(
+
+    "change",
+
+    e => {
+
+      const file =
+        e.target.files[0];
+
+      if(!file){
+        return;
+      }
+
+      const reader =
+        new FileReader();
+
+      reader.onload =
+        ev => {
+
+          const img =
+
+            document.getElementById(
+              "previewImagen"
+            );
+
+          img.src =
+            ev.target.result;
+
+          img.style.display =
+            "block";
+
+          document.getElementById(
+            "textoPreview"
+          ).style.display =
+            "none";
+        };
+
+      reader.readAsDataURL(
+        file
+      );
+    }
+  );
+
+function limpiarFormularioObs(){
+
+  document.getElementById(
+    "obsModulo"
+  ).value = "";
+
+  document.getElementById(
+    "obsDesc"
+  ).value = "";
+
+  document.getElementById(
+    "obsPasos"
+  ).value = "";
+
+  document.getElementById(
+    "obsPrioridad"
+  ).value = "MEDIA";
+
+  document.getElementById(
+    "obsImagen"
+  ).value = "";
+
+  const img =
+    document.getElementById(
+      "previewImagen"
+    );
+
+  img.src = "";
+
+  img.style.display =
+    "none";
+
+  document.getElementById(
+    "textoPreview"
+  ).style.display =
+    "block";
+}
+
+</script>

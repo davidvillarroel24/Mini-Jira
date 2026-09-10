@@ -1,0 +1,224 @@
+<div class="container-fluid p-4">
+
+  <div class="card shadow">
+
+    <div class="card-header d-flex justify-content-between">
+
+      <h4>
+        Editar Observación
+      </h4>
+
+      <button
+        class="btn btn-secondary"
+        onclick="loadDashboard()"
+      >
+        Volver
+      </button>
+
+    </div>
+
+    <div class="card-body">
+
+      <input
+        type="hidden"
+        id="obsId"
+      >
+
+      <div class="row g-4">
+
+        <!-- IMAGEN -->
+        <div class="col-md-4">
+
+          <div
+            class="
+              border
+              rounded
+              p-3
+              text-center
+              bg-light
+            "
+          >
+
+            <img
+              id="previewImagenEdit"
+              class="img-fluid rounded shadow-sm"
+              style="
+                max-height:500px;
+                object-fit:contain;
+                display:none;
+              "
+            >
+
+            <div
+              id="sinImagenEdit"
+              class="text-muted"
+            >
+              Sin imagen
+            </div>
+
+            <div
+              id="contenedorUploadEdit"
+              class="mt-3"
+            >
+
+              <input
+                type="file"
+                id="obsImagenEdit"
+                class="form-control"
+                accept="image/*"
+              >
+
+            </div>
+
+            <div
+              id="mensajeImagenBloqueada"
+              class="
+                alert
+                alert-info
+                mt-3
+                d-none
+              "
+            >
+              La captura ya fue registrada y no puede modificarse.
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- FORMULARIO -->
+        <div class="col-md-8">
+
+          <div  class="mb-3">
+
+            <label class="form-label fw-bold">
+              Módulo
+            </label>
+
+            <input
+              id="obsModuloEdit"
+              class="form-control"
+            >
+
+          </div>
+
+          <div  id="grupoDescripcion" class="mb-3">
+
+            <label class="form-label fw-bold">
+              Descripción
+            </label>
+
+            <textarea
+              id="obsDescEdit"
+              class="form-control"
+              rows="5"
+            ></textarea>
+
+          </div>
+
+          <div id="grupoPasos" class="mb-3">
+
+            <label class="form-label fw-bold">
+              Pasos para reproducir
+            </label>
+
+            <textarea
+              id="obsPasosEdit"
+              class="form-control"
+              rows="7"
+            ></textarea>
+
+          </div>
+
+          <div class="mb-3">
+
+            <label class="form-label fw-bold">
+              Prioridad
+            </label>
+
+            <select
+              id="obsPrioridadEdit"
+              class="form-select"
+            >
+
+              <option>
+                BAJA
+              </option>
+
+              <option>
+                MEDIA
+              </option>
+
+              <option>
+                ALTA
+              </option>
+
+              <option>
+                CRITICA
+              </option>
+
+            </select>
+
+          </div>
+
+          <div
+            id="seccionAsignacionDev"
+            class="mb-3 d-none"
+          >
+
+            <label class="form-label fw-bold">
+              DEV Asignado
+            </label>
+
+            <select
+              id="obsDevAsignado"
+              class="form-select"
+            >
+
+              <option value="">
+                Seleccionar DEV
+              </option>
+
+            </select>
+
+          </div>
+
+          <div
+            id="infoAsignacion"
+            class="
+              alert
+              alert-info
+              d-none
+            "
+          >
+          
+            <input
+              type="hidden"
+              id="obsEstadoEdit"
+            >
+
+            <input
+              type="hidden"
+              id="obsDevActual"
+            >
+            
+          </div>
+
+
+          <button
+            class="btn btn-success"
+            onclick="guardarEdicionObservacion()"
+          >
+            Guardar Cambios
+          </button>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+

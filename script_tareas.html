@@ -1,0 +1,1086 @@
+  <script>
+
+  console.log("script_tareas cargado");
+    window.taskEditImageBase64 = "";
+
+  function guardarTarea(){
+
+
+
+    const payload = {
+
+      creadoPor:
+        document
+          .getElementById("txtNavbarUser")
+          .innerText,
+
+      Modulo:
+        document
+          .getElementById("obsModulo")
+          .value,
+
+      Descripcion:
+        document
+          .getElementById("obsDesc")
+          .value,
+
+      Pasos:
+        document
+          .getElementById("obsPasos")
+          .value,
+
+      Prioridad:
+        document
+          .getElementById("obsPrioridad")
+          .value,
+
+      Imagen:
+        IMAGE_BASE64
+    };
+
+    Swal.fire({
+
+      title:'Guardando...',
+
+      allowOutsideClick:false,
+
+      didOpen:()=>{
+
+        Swal.showLoading();
+      }
+    });
+
+    google.script.run
+
+      .withSuccessHandler(res => {
+
+        Swal.fire({
+
+          icon:'success',
+
+          title:'Tarea creada',
+
+          text:res.id
+        });
+
+        loadDashboard({
+          view:'TAREAS',
+          categoria:'TAREA'
+        });
+
+      })
+
+      .withFailureHandler(err => {
+
+        Swal.fire({
+
+          icon:'error',
+
+          title:'Error',
+
+          text:err.message
+        });
+
+      })
+
+      .crearTarea(
+        payload,
+        typeof getClientUserContext === "function" ? getClientUserContext() : null
+      );
+  }
+
+  </script>
+
+  <script>
+  function verTarea(id){
+
+    showLoading(
+      "Cargando tarea..."
+    );
+
+    document.body.style.paddingRight =
+      "0px";
+
+    google.script.run
+
+      .withSuccessHandler(function(task){
+
+        console.log(task);
+
+        let imageUrl = "";
+
+        if(task.CAPTURAS){
+
+          const match =
+            task.CAPTURAS.match(
+              /[-\w]{25,}/
+            );
+
+          if(match){
+
+            const fileId =
+              match[0];
+
+            imageUrl =
+              "https://lh3.googleusercontent.com/d/" +
+              fileId;
+          }
+        }
+
+        document.getElementById(
+          "detalleObservacion"
+        ).innerHTML = `
+
+        <div class="container-fluid">
+
+          <div class="row">
+
+            <div class="col-md-4 text-center">
+
+              ${
+                imageUrl
+
+                ?
+
+                `<img
+                  src="${imageUrl}"
+                  class="img-fluid rounded border shadow-sm"
+                  style="
+                    max-height:500px;
+                    object-fit:contain;
+                  "
+                >`
+
+                :
+
+                `<div class="text-muted">
+                  Sin imagen
+                </div>`
+              }
+
+            </div>
+
+            <div class="col-md-8">
+
+              <h5 class="mb-3">
+                ${task.ID_OBSERVACION}
+              </h5>
+
+              <div class="mb-2">
+                <b>Creado por:</b>
+                ${task.QA || ""}
+              </div>
+
+              <div class="mb-2">
+                <b>Asignado a:</b>
+                ${task.DEV_ASIGNADO || ""}
+              </div>
+
+              <div class="mb-2">
+                <b>Módulo:</b>
+                ${task.MODULO || ""}
+              </div>
+
+              <div class="mb-2">
+                <b>Estado:</b>
+                ${task.ESTADO || ""}
+              </div>
+
+              <div class="mb-2">
+                <b>Prioridad:</b>
+                ${task.PRIORIDAD || ""}
+              </div>
+
+              <hr>
+
+              <div class="mb-3">
+
+                <label class="fw-bold">
+                  Descripción
+                </label>
+
+                <div class="border rounded p-2 bg-light">
+
+                  ${(task.DESCRIPCION_CORTA || "")
+                    .replace(/\n/g,"<br>")}
+
+                </div>
+
+              </div>
+
+              <div>
+
+                <label class="fw-bold">
+                  Detalle
+                </label>
+
+                <div class="border rounded p-2 bg-light">
+
+                  ${(task.PASOS_REPRODUCIR || "")
+                    .replace(/\n/g,"<br>")}
+
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+        `;
+
+        hideLoading();
+
+        bootstrap.Modal
+          .getOrCreateInstance(
+
+            document.getElementById(
+              "modalObservacion"
+            )
+
+          )
+          .show();
+
+      })
+
+      .withFailureHandler(err => {
+
+        hideLoading();
+
+        Swal.fire({
+
+          icon:"error",
+
+          title:"Error",
+
+          text:err.message
+
+        });
+
+      })
+
+      .getTareaById(id);
+  }
+  </script>
+
+
+  <script>
+  function editarTarea(id){
+
+    const task =
+
+      window.dataObservaciones.find(
+
+        x =>
+
+          String(x.ID_OBSERVACION) ===
+          String(id)
+
+      );
+
+    if(!task){
+
+      console.error(
+        "No se encontró la tarea"
+      );
+
+      return;
+    }
+
+    showLoading(
+      "Cargando tarea..."
+    );
+
+    window.taskTemporal =
+      task;
+
+    google.script.run
+
+      .withSuccessHandler(html => {
+
+        renderView(html);
+
+        cargarDatosTarea(
+          window.taskTemporal
+        );
+
+        cargarUsuariosAsignables();
+
+        hideLoading();
+
+      })
+
+      .withFailureHandler(err => {
+
+        hideLoading();
+
+        Swal.fire({
+
+          icon:"error",
+
+          title:"Error",
+
+          text:err.message
+
+        });
+
+      })
+
+      .getView(
+        "view_tareas_editar"
+      );
+
+  }
+  </script>
+
+  <script>  
+  function cargarDatosTarea(task){
+
+    window.taskActual = task;
+    window.taskEditImageBase64 = "";
+
+    document.getElementById(
+      "obsId"
+    ).value =
+      task.ID_OBSERVACION;
+
+    document.getElementById(
+      "obsModuloEdit"
+    ).value =
+      task.MODULO || "";
+
+    document.getElementById(
+      "obsDescEdit"
+    ).value =
+      task.DESCRIPCION_CORTA || "";
+
+    document.getElementById(
+      "obsPasosEdit"
+    ).value =
+      task.PASOS_REPRODUCIR || "";
+
+    document.getElementById(
+      "obsPrioridadEdit"
+    ).value =
+      task.PRIORIDAD || "MEDIA";
+
+    document.getElementById(
+      "obsEstadoEdit"
+    ).value =
+      task.ESTADO || "";
+
+    // =========================
+    // ASIGNACIONES
+    // =========================
+
+    let asignaciones = {
+
+      QA: [],
+      DEV: [],
+      PM: [],
+      LIDER_QA: [],
+      LIDER_DEV: []
+
+    };
+
+    try{
+
+      if(task.USUARIOS_ASIGNADOS){
+
+        asignaciones =
+
+          JSON.parse(
+            task.USUARIOS_ASIGNADOS
+          );
+
+      }
+
+    }catch(err){
+
+      console.error(
+        "Error leyendo asignaciones",
+        err
+      );
+
+    }
+
+    window.taskAsignaciones =
+      asignaciones;
+
+    document.getElementById(
+      "taskAsignacionesJson"
+    ).value =
+
+      JSON.stringify(
+        asignaciones
+      );
+
+    console.log(
+      "Asignaciones cargadas:",
+      asignaciones
+    );
+
+    // =========================
+    // IMAGEN
+    // =========================
+
+    if(task.CAPTURAS){
+
+      const match =
+        task.CAPTURAS.match(
+          /[-\w]{25,}/
+        );
+
+      if(match){
+
+        const fileId =
+          match[0];
+
+        document.getElementById(
+          "previewImagenEdit"
+        ).src =
+
+          "https://lh3.googleusercontent.com/d/" +
+          fileId;
+
+        document.getElementById(
+          "previewImagenEdit"
+        ).style.display =
+          "block";
+
+        document.getElementById(
+          "sinImagenEdit"
+        ).style.display =
+          "none";
+
+        document.getElementById(
+          "contenedorUploadEdit"
+        ).style.display =
+          "none";
+
+        document.getElementById(
+          "mensajeImagenBloqueada"
+        ).classList.remove(
+          "d-none"
+        );
+      }
+
+    }else{
+
+      document
+        .getElementById(
+          "obsImagenEdit"
+        )
+
+        .addEventListener(
+
+          "change",
+
+          async e => {
+
+            const file =
+              e.target.files[0];
+
+            if(!file){
+              window.taskEditImageBase64 = "";
+              return;
+            }
+
+            if(typeof compressImage === "function"){
+              try{
+                window.taskEditImageBase64 = await compressImage(file);
+              }catch(error){
+                console.error("No se pudo comprimir la imagen", error);
+                window.taskEditImageBase64 = "";
+              }
+            }
+
+            const reader =
+              new FileReader();
+
+            reader.onload =
+              ev => {
+
+                document.getElementById(
+                  "previewImagenEdit"
+                ).src =
+                  ev.target.result;
+
+                document.getElementById(
+                  "previewImagenEdit"
+                ).style.display =
+                  "block";
+
+                document.getElementById(
+                  "sinImagenEdit"
+                ).style.display =
+                  "none";
+              };
+
+            reader.readAsDataURL(
+              file
+            );
+          }
+
+        );
+    }
+
+    // =========================
+    // RESUMEN
+    // =========================
+
+    actualizarResumenAsignaciones();
+
+  }
+  </script>
+
+  <script>
+  function cargarUsuariosAsignables(){
+
+    google.script.run
+
+      .withSuccessHandler(usuarios => {
+
+        const tbody =
+
+          document.querySelector(
+            "#tblUsuariosAsignados tbody"
+          );
+
+        tbody.innerHTML = "";
+
+        usuarios.forEach(user => {
+
+          const nombre =
+            user.Nombre;
+
+          const rol =
+            String(
+              user.Rol_principal
+            ).trim();
+
+          const checked =
+            usuarioAsignado(
+              nombre,
+              rol
+            )
+
+            ?
+
+            "checked"
+
+            :
+
+            "";
+
+          tbody.innerHTML += `
+
+            <tr>
+
+              <td>
+
+                <input
+                  type="checkbox"
+                  class="chkAsignacion"
+
+                  data-nombre="${nombre}"
+
+                  data-rol="${rol}"
+
+                  ${checked}
+                >
+
+              </td>
+
+              <td>
+
+                ${nombre}
+
+              </td>
+
+              <td>
+
+                ${rol}
+
+              </td>
+
+            </tr>
+
+          `;
+
+        });
+
+        inicializarEventosAsignacion();
+
+        actualizarResumenAsignaciones();
+
+      })
+
+      .withFailureHandler(err => {
+
+        console.error(err);
+
+        Swal.fire({
+
+          icon:"error",
+
+          title:"Error",
+
+          text:err.message
+
+        });
+
+      })
+
+      .obtenerUsuariosAsignables();
+
+  }
+  </script>
+
+  <script>
+  function usuarioAsignado(
+    nombre,
+    rol
+  ){
+
+    const data =
+      window.taskAsignaciones;
+
+    if(
+      !data ||
+      !data[rol]
+    ){
+
+      return false;
+
+    }
+
+    return data[rol].includes(
+      nombre
+    );
+
+  }
+  </script>
+
+  <script>
+  function inicializarEventosAsignacion(){
+
+    document
+
+      .querySelectorAll(
+        ".chkAsignacion"
+      )
+
+      .forEach(chk => {
+
+        chk.addEventListener(
+
+          "change",
+
+          actualizarAsignaciones
+
+        );
+
+      });
+
+  }
+  </script>
+
+
+  <script>
+  function actualizarAsignaciones(){
+
+    const asignaciones = {
+
+      QA: [],
+      DEV: [],
+      PM: [],
+      LIDER_QA: [],
+      LIDER_DEV: []
+
+    };
+
+    document
+
+      .querySelectorAll(
+        ".chkAsignacion:checked"
+      )
+
+      .forEach(chk => {
+
+        const nombre =
+          chk.dataset.nombre;
+
+        const rol =
+          chk.dataset.rol;
+
+        if(
+          asignaciones[rol]
+        ){
+
+          asignaciones[rol]
+            .push(nombre);
+
+        }
+
+      });
+
+    window.taskAsignaciones =
+      asignaciones;
+
+    document.getElementById(
+      "taskAsignacionesJson"
+    ).value =
+
+      JSON.stringify(
+        asignaciones
+      );
+
+    actualizarResumenAsignaciones();
+
+  }
+  </script>
+
+  <script>
+  function actualizarResumenAsignaciones(){
+
+    const a =
+      window.taskAsignaciones || {};
+
+    const html = `
+
+      <b>QA:</b>
+      ${(a.QA || []).join(", ") || "-"}
+
+      <br>
+
+      <b>DEV:</b>
+      ${(a.DEV || []).join(", ") || "-"}
+
+      <br>
+
+      <b>PM:</b>
+      ${(a.PM || []).join(", ") || "-"}
+
+      <br>
+
+      <b>LIDER_QA:</b>
+      ${(a.LIDER_QA || []).join(", ") || "-"}
+
+      <br>
+
+      <b>LIDER_DEV:</b>
+      ${(a.LIDER_DEV || []).join(", ") || "-"}
+
+    `;
+
+    document.getElementById(
+      "taskResumenAsignaciones"
+    ).innerHTML =
+      html;
+
+  }
+  </script>
+
+  <script>
+  function guardarEdicionTarea(){
+
+    const payload = {
+
+      ID_OBSERVACION:
+        document.getElementById(
+          "obsId"
+        ).value,
+
+      MODULO:
+        document.getElementById(
+          "obsModuloEdit"
+        ).value,
+
+      DESCRIPCION_CORTA:
+        document.getElementById(
+          "obsDescEdit"
+        ).value,
+
+      PASOS_REPRODUCIR:
+        document.getElementById(
+          "obsPasosEdit"
+        ).value,
+
+      PRIORIDAD:
+        document.getElementById(
+          "obsPrioridadEdit"
+        ).value,
+
+      USUARIOS_ASIGNADOS:
+        document.getElementById(
+          "taskAsignacionesJson"
+        ).value,
+
+      Imagen:
+        window.taskEditImageBase64 || ""
+    };
+
+    Swal.fire({
+
+      title:"Guardando...",
+
+      allowOutsideClick:false,
+
+      didOpen:()=>{
+
+        Swal.showLoading();
+
+      }
+
+    });
+
+    google.script.run
+
+      .withSuccessHandler(res => {
+
+        Swal.fire({
+
+          icon:"success",
+
+          title:"Tarea actualizada"
+
+        });
+
+        loadDashboard({
+          view:'TAREAS',
+          categoria:"TAREA"
+        });
+
+      })
+
+      .withFailureHandler(err => {
+
+        Swal.fire({
+
+          icon:"error",
+
+          title:"Error",
+
+          text:err.message
+
+        });
+
+      })
+
+      .guardarEdicionTarea(
+        payload
+      );
+
+  }
+  </script>
+
+  <script>
+  function eliminarTarea(id){
+
+    Swal.fire({
+
+      title: '¿Eliminar tarea?',
+
+      text: `Se eliminará la tarea ${id}`,
+
+      icon: 'warning',
+
+      showCancelButton: true,
+
+      confirmButtonText: 'Sí, eliminar',
+
+      cancelButtonText: 'Cancelar',
+
+      confirmButtonColor: '#d33'
+
+    })
+
+    .then(result => {
+
+      if(!result.isConfirmed){
+        return;
+      }
+
+      google.script.run
+
+        .withSuccessHandler(() => {
+
+          loadDashboard({
+            view:'TAREAS',
+            categoria:'TAREA'
+          });
+
+          Swal.fire({
+
+            title: 'Eliminada',
+
+            text: 'La tarea fue eliminada correctamente.',
+
+            icon: 'success',
+
+            showConfirmButton: false,
+
+            timer: 2000,
+
+            timerProgressBar: true
+
+          });
+
+        })
+
+        .withFailureHandler(error => {
+
+          Swal.fire({
+
+            title: 'Error',
+
+            text: error.message || String(error),
+
+            icon: 'error',
+
+            showConfirmButton: false,
+
+            timer: 3000,
+
+            timerProgressBar: true
+
+          });
+
+        })
+
+        .TASK_SERVICE_delete(id);
+
+    });
+
+  }
+  </script>
+
+
+  <script>
+  function tareaTieneAsignados(data){
+
+    try{
+
+      const asignados =
+
+        JSON.parse(
+          data.USUARIOS_ASIGNADOS || "{}"
+        );
+
+      return Object
+        .values(asignados)
+
+        .some(arr =>
+
+          Array.isArray(arr)
+
+          &&
+
+          arr.length > 0
+        );
+
+    }
+    catch(e){
+
+      console.error(
+        "Error validando asignados",
+        e
+      );
+
+      return false;
+    }
+
+  }
+  </script>
+
+  <script>
+  function restaurarTarea(id){
+
+    Swal.fire({
+
+      title:'¿Restaurar tarea?',
+
+      text:`Se restaurará la tarea ${id}`,
+
+      icon:'question',
+
+      showCancelButton:true,
+
+      confirmButtonText:'Sí, restaurar',
+
+      cancelButtonText:'Cancelar'
+
+    })
+
+    .then(result => {
+
+      if(!result.isConfirmed){
+        return;
+      }
+
+      showLoading(
+        "Restaurando tarea..."
+      );
+
+      google.script.run
+
+        .withSuccessHandler(() => {
+
+          hideLoading();
+
+          cargarTablaObservaciones({
+
+            view:"ELIMINADAS",
+
+            categoria:"TAREA"
+
+          });
+
+          Swal.fire({
+
+            icon:'success',
+
+            title:'Restaurada',
+
+            text:'La tarea fue restaurada correctamente.',
+
+            showConfirmButton:false,
+
+            timer:2000,
+
+            timerProgressBar:true
+
+          });
+
+        })
+
+        .withFailureHandler(error => {
+
+          hideLoading();
+
+          Swal.fire({
+
+            icon:'error',
+
+            title:'Error',
+
+            text:error.message || String(error),
+
+            showConfirmButton:false,
+
+            timer:3000,
+
+            timerProgressBar:true
+
+          });
+
+        })
+
+        .TASK_SERVICE_restore(id);
+
+    });
+
+  }
+  </script>

@@ -1,0 +1,67 @@
+<div class="container-fluid p-4 studio-shell">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="d-flex align-items-center gap-2 mb-0">
+      <i class="bi bi-list-task text-primary"></i>
+      Backlog
+    </h3>
+    <button class="btn btn-primary" onclick="abrirModalSprint()">
+      <i class="bi bi-plus-circle me-1"></i>
+      Nuevo item
+    </button>
+  </div>
+
+  <div class="table-scroll">
+    <table class="table table-striped table-hover mb-0" id="tblSprintsAdmin">
+      <thead></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="modalSprint" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Backlog</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="bkId">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Descripción</label>
+            <input id="bkDescripcion" class="form-control">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Sprint</label>
+            <input id="bkSprint" class="form-control">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Prioridad</label>
+            <input id="bkPrioridad" class="form-control">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Esfuerzo</label>
+            <input id="bkEsfuerzo" class="form-control">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Verificación</label>
+            <textarea id="bkVerificacion" class="form-control" rows="3"></textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">DEV</label>
+            <input id="bkDev" class="form-control">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">QA</label>
+            <input id="bkQa" class="form-control">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button id="btnGuardarSprint" class="btn btn-primary" onclick="guardarSprint()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>

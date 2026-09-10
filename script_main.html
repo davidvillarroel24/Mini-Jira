@@ -1,0 +1,1282 @@
+<script>
+
+function _configureSidebarTrash(config = {}){
+  const btn = document.getElementById("btnPapelera");
+
+  if(!btn){
+    return;
+  }
+
+  const visible = !!config.visible;
+
+  btn.classList.toggle("d-none", !visible);
+
+  if(!visible){
+    return;
+  }
+
+  const label = String(config.label || "Papelera");
+  const icon = String(config.icon || "bi-trash3");
+  const onclick = String(config.onclick || "").trim();
+
+  btn.innerHTML = `<i class="bi ${icon} me-2"></i>${label}`;
+
+  if(onclick){
+    btn.setAttribute("onclick", onclick);
+  }else{
+    btn.removeAttribute("onclick");
+  }
+}
+
+console.log("script_main cargado");
+
+function doLogin() {
+
+  const nombre =
+    document.getElementById("txtUser").value;
+  
+  showLoading(
+    "Ingresando..."
+  );
+
+  google.script.run
+    .withSuccessHandler(res => {
+      
+      hideLoading();
+      
+      if (!res.ok) {
+
+        hideLoading();
+
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: res.message
+        });
+
+        return;
+      }
+
+      window.currentUser = res.user;
+
+      window.currentRole =   
+        res.user.rol;
+
+      CURRENT_USER = res.user;
+
+
+      document
+        .getElementById("sidebar")
+        .classList.remove("d-none");
+
+      loadKanban({ sprintId: "TODOS" });
+
+      document
+        .getElementById("navbarUser")
+        .classList.remove("d-none");
+
+      document
+        .getElementById("txtNavbarUser")
+        .innerText = res.user.nombre;
+
+      cargarRolesNavbar(res.user);
+
+      Promise.resolve(refreshNavbarNotifications({silent: false}))
+        .finally(() => {
+          refreshDailyReminder({silent: false});
+          refreshSidebarObservacionesCounter();
+        });
+
+    })
+    .login(nombre);
+}
+
+
+</script>
+
+
+<script>
+
+function logout() {
+
+  if(typeof saveDashboardPreferencesCurrent === "function"){
+    try{
+      saveDashboardPreferencesCurrent();
+    }catch(error){
+      console.error(error);
+    }
+  }
+
+  showLoading(
+    "Cerrando sesión..."
+  );
+
+  google.script.run
+    .withSuccessHandler(() => {
+
+      resetLoading();
+      
+      CURRENT_USER = null;
+      localStorage.removeItem("USER");
+      // ocultar sidebar
+      document
+        .getElementById("sidebar")
+        .classList.add("d-none");
+
+      // ocultar navbar user
+      document
+        .getElementById("navbarUser")
+        .classList.add("d-none");
+
+      // limpiar usuario navbar
+      document
+        .getElementById("txtNavbarUser")
+        .innerText = "";
+
+      _setSidebarObservacionesCounter(0);
+
+      clearNavbarNotifications();
+
+      Object.keys(sessionStorage || {}).forEach(key => {
+        if(String(key || "").startsWith("dailyReminder:")){
+          sessionStorage.removeItem(key);
+        }
+      });
+
+      // cargar login
+      google.script.run
+        .withSuccessHandler(html => {
+
+          renderView(html);
+
+          setTimeout(() => {
+
+            cargarUsuariosLogin();
+
+          }, 100);
+
+        })
+        .getView('view_login');
+
+    })
+    .withFailureHandler(err => {
+
+      resetLoading();
+
+      Swal.fire({
+        icon:'error',
+        title:'Error',
+        text:err.message
+      });
+    })
+    .logout();
+}
+
+</script>
+
+
+<script>
+
+function renderView(html) {
+
+  document
+    .getElementById("app")
+    .innerHTML = html;
+}
+
+function _safeCargarTablaObservaciones(filters = {}){
+  const fn = window.cargarTablaObservaciones;
+
+  if(typeof fn !== "function"){
+    console.error("cargarTablaObservaciones no esta disponible", {currentAppView: window.currentAppView});
+    Swal.fire({
+      icon: "error",
+      title: "Error",
+      text: "No se pudo cargar la tabla de observaciones. Recarga la pagina e intenta nuevamente."
+    });
+    return;
+  }
+
+  fn(filters || {});
+
+  refreshSidebarObservacionesCounter();
+}
+
+function _setSidebarObservacionesCounter(value){
+  const badge = document.getElementById("badgeMisObservaciones");
+
+  if(!badge){
+    return;
+  }
+
+  const count = Math.max(0, Number(value || 0));
+
+  badge.innerText = String(count);
+  badge.classList.toggle("d-none", count <= 0);
+}
+
+function refreshSidebarObservacionesCounter(){
+  const userCtx = typeof getClientUserContext === "function" ? getClientUserContext() : null;
+
+  if(!userCtx || !String(userCtx.nombre || "").trim()){
+    _setSidebarObservacionesCounter(0);
+    return Promise.resolve({count: 0});
+  }
+
+  return runServer("OBS_SERVICE_countAssignedOpen", userCtx)
+    .then(res => {
+      const count = Number(res && res.count || 0);
+      _setSidebarObservacionesCounter(count);
+      return {count: count};
+    })
+    .catch(error => {
+      console.error(error);
+      _setSidebarObservacionesCounter(0);
+      return {count: 0};
+    });
+}
+
+window.refreshSidebarObservacionesCounter = refreshSidebarObservacionesCounter;
+
+function getClientUserContext(){
+
+  // window.currentUser/window.currentRole ya se mantienen sincronizados
+  // en el login (doLogin) y en el onchange de #cmbRoles (cargarRolesNavbar).
+  // Se usan como fuente primaria en vez de releer el DOM en cada llamada,
+  // que es fragil ante timing de renderizado (bug intermitente en "Mis Observaciones").
+
+  const cmb = document.getElementById("cmbRoles");
+
+  const nombre = (window.currentUser && window.currentUser.nombre)
+    ? String(window.currentUser.nombre).trim()
+    : (document.getElementById("txtNavbarUser")
+        ? document.getElementById("txtNavbarUser").innerText.trim()
+        : "");
+
+  const rol = window.currentRole
+    ? String(window.currentRole).trim()
+    : (cmb ? String(cmb.value || "").trim() : "");
+
+  let roles = "";
+
+  if(cmb && cmb.options){
+    roles = Array.from(cmb.options)
+      .map(x => x.value)
+      .join(";");
+  }else if(window.currentUser && window.currentUser.roles){
+    roles = String(window.currentUser.roles);
+  }
+
+  return {
+    nombre: nombre,
+    rol: rol,
+    roles: roles
+  };
+}
+
+window.getClientUserContext = getClientUserContext;
+
+function getNotificationUserContext(){
+
+  const user = window.currentUser || {};
+
+  return {
+    nombre: String(user.nombre || "").trim(),
+    rol: String(user.rol || "").trim(),
+    roles: String(user.roles || user.rol || "").trim()
+  };
+}
+
+window.getNotificationUserContext = getNotificationUserContext;
+
+function clearNavbarNotifications(){
+
+  const badge = document.getElementById("badgeNavbarNotifications");
+  const chats = document.getElementById("notifChatsList");
+  const broadcasts = document.getElementById("notifBroadcastList");
+
+  if(badge){
+    badge.classList.add("d-none");
+    badge.innerText = "0";
+  }
+
+  if(chats){
+    chats.innerHTML = "";
+  }
+
+  if(broadcasts){
+    broadcasts.innerHTML = "";
+  }
+}
+
+function _escapeNotifHtml(value){
+  return String(value === null || value === undefined ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function _renderNavbarNotifications(summary){
+
+  const badge = document.getElementById("badgeNavbarNotifications");
+  const chats = document.getElementById("notifChatsList");
+  const broadcasts = document.getElementById("notifBroadcastList");
+
+  if(!badge || !chats || !broadcasts){
+    return;
+  }
+
+  const unreadChats = Array.isArray(summary && summary.unreadChats)
+    ? summary.unreadChats
+    : [];
+
+  const activeBroadcasts = Array.isArray(summary && summary.activeBroadcasts)
+    ? summary.activeBroadcasts
+    : [];
+
+  const total = Number(summary && summary.unreadChatsCount || 0);
+
+  badge.innerText = String(total);
+  badge.classList.toggle("d-none", total <= 0);
+
+  if(unreadChats.length === 0){
+    chats.innerHTML = `<div class="small text-muted px-1 py-2">Sin chats pendientes.</div>`;
+  }else{
+    chats.innerHTML = unreadChats.map(chat => `
+      <button
+        type="button"
+        class="list-group-item list-group-item-action py-2"
+        onclick="openNotificationChat('${_escapeNotifHtml(chat.tipo)}','${_escapeNotifHtml(chat.id)}')"
+      >
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <div>
+            <div class="fw-semibold">${_escapeNotifHtml(chat.id || "")}</div>
+            <div class="small text-muted">${_escapeNotifHtml(chat.tipo || "")}</div>
+            <div class="small">${_escapeNotifHtml(chat.lastBy || "Sin usuario")}: ${_escapeNotifHtml(chat.lastMessage || "")}</div>
+          </div>
+          <span class="badge text-bg-light">${_escapeNotifHtml(chat.lastAt || "")}</span>
+        </div>
+      </button>
+    `).join("");
+  }
+
+  if(activeBroadcasts.length === 0){
+    broadcasts.innerHTML = `<div class="small text-muted px-1 py-2">Sin broadcasts activos.</div>`;
+  }else{
+    broadcasts.innerHTML = activeBroadcasts.map(item => `
+      <div class="list-group-item py-2">
+        <div class="fw-semibold">${_escapeNotifHtml(item.titulo || "Broadcast")}</div>
+        <div class="small text-muted">${_escapeNotifHtml(item.nivel || "INFO")} - ${_escapeNotifHtml(item.scopeLabel || "General")}</div>
+        <div class="small">${_escapeNotifHtml(item.mensaje || "")}</div>
+      </div>
+    `).join("");
+  }
+}
+
+async function _showBroadcastAnnouncements(alerts, userContext){
+
+  if(!Array.isArray(alerts) || alerts.length === 0){
+    return;
+  }
+
+  if(window.broadcastAnnouncementLock){
+    return;
+  }
+
+  window.broadcastAnnouncementLock = true;
+
+  const html = `
+    <div class="text-start">
+      ${alerts.map(item => `
+        <div class="border rounded p-2 mb-2">
+          <div class="fw-semibold">${_escapeNotifHtml(item.titulo || "Broadcast")}</div>
+          <div class="small text-muted mb-1">${_escapeNotifHtml(item.nivel || "INFO")} - ${_escapeNotifHtml(item.scopeLabel || "General")}</div>
+          <div>${_escapeNotifHtml(item.mensaje || "")}</div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+
+  try{
+    await Swal.fire({
+      icon: "info",
+      title: "Broadcast activo",
+      html: html,
+      confirmButtonText: "Entendido"
+    });
+
+    await runServer(
+      "NOTIF_ackBroadcasts",
+      {ids: alerts.map(item => item.id)},
+      userContext
+    );
+  }catch(error){
+    console.error(error);
+  }finally{
+    window.broadcastAnnouncementLock = false;
+  }
+}
+
+function refreshNavbarNotifications(options = {}){
+
+  const silent = !!(options && options.silent);
+  const userContext = getNotificationUserContext();
+  let loadingVisible = !silent;
+
+  if(!userContext.nombre || !userContext.rol){
+    clearNavbarNotifications();
+    return Promise.resolve(null);
+  }
+
+  if(!silent){
+    showLoading("Actualizando notificaciones...");
+  }
+
+  return runServer("NOTIF_getNavbarSummary", userContext)
+    .then(summary => {
+      _renderNavbarNotifications(summary || {});
+
+      if(!silent && loadingVisible){
+        return Promise.resolve(hideLoading())
+          .then(() => {
+            loadingVisible = false;
+            return _showBroadcastAnnouncements(summary && summary.broadcastAlerts ? summary.broadcastAlerts : [], userContext);
+          })
+          .then(() => summary);
+      }
+
+      if(!silent){
+        return _showBroadcastAnnouncements(summary && summary.broadcastAlerts ? summary.broadcastAlerts : [], userContext)
+          .then(() => summary);
+      }
+
+      return summary;
+    })
+    .catch(err => {
+      console.error(err);
+      if(!silent){
+        Swal.fire({icon:'error', title:'Error', text: err.message || String(err)});
+      }
+      return null;
+    })
+    .finally(() => {
+      if(loadingVisible){
+        hideLoading();
+        loadingVisible = false;
+      }
+    });
+}
+
+window.refreshNavbarNotifications = refreshNavbarNotifications;
+
+function openNotificationChat(tipo, id){
+
+  const itemId = String(id || "").trim();
+  const chatType = String(tipo || "OBSERVACION").trim().toUpperCase();
+
+  if(!itemId || typeof abrirComentarios !== "function"){
+    return;
+  }
+
+  if(typeof _kanbanEnsureSharedTaskModals === "function"){
+    _kanbanEnsureSharedTaskModals();
+  }
+
+  const chatTipo = document.getElementById("chatTipo");
+  const categoria = document.getElementById("DshCategoria");
+
+  if(chatTipo){
+    chatTipo.value = chatType === "TAREA" ? "TAREA" : "OBSERVACION";
+  }
+
+  if(categoria){
+    categoria.value = chatType === "TAREA" ? "TAREA" : "OBSERVACION";
+  }
+
+  Promise.resolve(abrirComentarios(itemId))
+    .then(() => {
+      refreshNavbarNotifications({silent: true});
+    })
+    .catch(error => {
+      console.error(error);
+    });
+}
+
+window.openNotificationChat = openNotificationChat;
+
+</script>
+
+<script>
+
+function loadDashboard(
+  filters = {}
+){
+
+  const requestId = (window.dashboardViewRequestSeq || 0) + 1;
+  window.dashboardViewRequestSeq = requestId;
+
+  window.currentAppView = "DASHBOARD";
+
+  showLoading(
+    "Cargando dashboard..."
+  );
+
+  google.script.run
+
+    .withSuccessHandler(html => {
+
+      if(requestId !== window.dashboardViewRequestSeq){
+        hideLoading();
+        return;
+      }
+
+      renderView(html);
+
+
+    _safeCargarTablaObservaciones(
+      filters
+    );
+    
+      
+      hideLoading();
+    })
+
+    .withFailureHandler(err => {
+
+      hideLoading();
+
+      console.error(err);
+
+      Swal.fire({
+
+        icon:'error',
+
+        title:'Error',
+
+        text:err.message
+      });
+    })
+
+    .getView(
+      "view_dashboard"
+    );
+
+}
+
+function loadKanban(filters = {}){
+
+  window.currentAppView = "KANBAN";
+
+  showLoading("Cargando tablero Kanban...");
+    _configureSidebarTrash({visible: false});
+
+  google.script.run
+    .withSuccessHandler(html => {
+
+      renderView(html);
+      hideLoading();
+
+      if(typeof initKanban === "function"){
+        initKanban(filters || {});
+      }
+    })
+    .withFailureHandler(err => {
+      hideLoading();
+      Swal.fire({icon:'error',title:'Error',text:err.message});
+    })
+    .getView("view_kanban");
+}
+
+  function loadUsuariosAdmin(opts = {}){
+
+    const view = opts && opts.view === "ELIMINADAS" ? "ELIMINADAS" : "ACTIVAS";
+
+    _configureSidebarTrash({
+      visible: true,
+      label: view === "ELIMINADAS" ? "Volver Usuarios" : "Papelera Usuarios",
+      icon: view === "ELIMINADAS" ? "bi-arrow-left-circle" : "bi-trash3",
+      onclick: view === "ELIMINADAS"
+        ? "loadUsuariosAdmin({view:'ACTIVAS'})"
+        : "loadUsuariosAdmin({view:'ELIMINADAS'})"
+    });
+
+  showLoading("Cargando usuarios...");
+
+  google.script.run
+    .withSuccessHandler(html => {
+      renderView(html);
+      hideLoading();
+      if(typeof initUsuariosAdmin === "function"){
+        initUsuariosAdmin({view: view});
+      }
+    })
+    .withFailureHandler(err => {
+      hideLoading();
+      Swal.fire({icon:'error',title:'Error',text:err.message});
+    })
+    .getView("view_usuarios");
+}
+
+  function loadSprints(opts = {}){
+
+    const view = opts && opts.view === "ELIMINADAS" ? "ELIMINADAS" : "ACTIVAS";
+
+    _configureSidebarTrash({
+      visible: true,
+      label: view === "ELIMINADAS" ? "Volver Sprints" : "Papelera Sprints",
+      icon: view === "ELIMINADAS" ? "bi-arrow-left-circle" : "bi-trash3",
+      onclick: view === "ELIMINADAS"
+        ? "loadSprints({view:'ACTIVAS'})"
+        : "loadSprints({view:'ELIMINADAS'})"
+    });
+
+  showLoading("Cargando sprints...");
+
+  google.script.run
+    .withSuccessHandler(html => {
+      renderView(html);
+      hideLoading();
+      if(typeof initSprintsAdmin === "function"){
+        initSprintsAdmin({view: view});
+      }
+    })
+    .withFailureHandler(err => {
+      hideLoading();
+      Swal.fire({icon:'error',title:'Error',text:err.message});
+    })
+    .getView("view_sprints");
+}
+
+  function loadCalendario(opts = {}){
+
+    const view = opts && opts.view === "ELIMINADAS" ? "ELIMINADAS" : "ACTIVAS";
+
+    _configureSidebarTrash({
+      visible: true,
+      label: view === "ELIMINADAS" ? "Volver Calendario" : "Papelera Calendario",
+      icon: view === "ELIMINADAS" ? "bi-arrow-left-circle" : "bi-trash3",
+      onclick: view === "ELIMINADAS"
+        ? "loadCalendario({view:'ACTIVAS'})"
+        : "loadCalendario({view:'ELIMINADAS'})"
+    });
+
+  showLoading("Cargando calendario...");
+
+  google.script.run
+    .withSuccessHandler(html => {
+      renderView(html);
+      hideLoading();
+      if(typeof initCalendarioAdmin === "function"){
+        initCalendarioAdmin({view: view});
+      }
+    })
+    .withFailureHandler(err => {
+      hideLoading();
+      Swal.fire({icon:'error',title:'Error',text:err.message});
+    })
+    .getView("view_calendario");
+}
+
+function loadDocumentacion(){
+  _configureSidebarTrash({visible: false});
+
+  showLoading("Cargando documentacion...");
+
+  google.script.run
+    .withSuccessHandler(html => {
+
+      renderView(html);
+
+      google.script.run
+        .withSuccessHandler(files => {
+
+          const grid = document.getElementById("docsGrid");
+
+          window.docsById = {};
+
+          const iconByMime = (mime) => {
+            if(String(mime).indexOf("document") > -1){
+              return "bi-file-earmark-richtext";
+            }
+            if(String(mime).indexOf("spreadsheet") > -1){
+              return "bi-file-earmark-spreadsheet";
+            }
+            if(String(mime).indexOf("presentation") > -1){
+              return "bi-file-earmark-slides";
+            }
+            if(String(mime).indexOf("pdf") > -1){
+              return "bi-file-earmark-pdf";
+            }
+            return "bi-file-earmark-text";
+          };
+
+          const escapeForAttr = (text) => String(text || "").replace(/'/g, "\\'");
+
+          (files || []).forEach(doc => {
+            window.docsById[doc.id] = doc;
+          });
+
+          grid.innerHTML = (files || []).map(doc => `
+            <div class="col-sm-6 col-md-4 col-xl-3">
+              <div class="docs-card d-block w-100 text-start">
+                <div class="docs-name mb-1">${doc.nombre}</div>
+                <div class="docs-meta">Actualizado: ${doc.updatedAt}</div>
+                <div class="d-flex gap-2 mt-3">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-primary"
+                    onclick="abrirDocumentoConHistorial('${doc.id}','${escapeForAttr(doc.nombre)}','${doc.url}')"
+                  >
+                    Abrir documento
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    onclick="mostrarHistorialDocumento('${doc.id}')"
+                  >
+                    Abierto (${(doc.historial || []).length})
+                  </button>
+                </div>
+              </div>
+            </div>
+          `).join("");
+
+          hideLoading();
+        })
+        .withFailureHandler(err => {
+          hideLoading();
+          Swal.fire({icon:'error',title:'Error',text:err.message});
+        })
+        .DOCS_listFolderItems();
+
+    })
+    .withFailureHandler(err => {
+      hideLoading();
+      Swal.fire({icon:'error',title:'Error',text:err.message});
+    })
+    .getView("view_documentacion");
+}
+
+function loadBroadcasts(opts = {}){
+
+  window.currentAppView = "BROADCAST";
+
+  const view = opts && opts.view === "ELIMINADAS" ? "ELIMINADAS" : "ACTIVAS";
+
+  _configureSidebarTrash({
+    visible: true,
+    label: view === "ELIMINADAS" ? "Volver Broadcast" : "Papelera Broadcast",
+    icon: view === "ELIMINADAS" ? "bi-arrow-left-circle" : "bi-trash3",
+    onclick: view === "ELIMINADAS"
+      ? "loadBroadcasts({view:'ACTIVAS'})"
+      : "loadBroadcasts({view:'ELIMINADAS'})"
+  });
+
+  showLoading("Cargando broadcast...");
+
+  google.script.run
+    .withSuccessHandler(html => {
+      renderView(html);
+      hideLoading();
+
+      if(typeof initBroadcasts === "function"){
+        initBroadcasts({view: view});
+      }
+    })
+    .withFailureHandler(err => {
+      hideLoading();
+      Swal.fire({icon:'error',title:'Error',text: err.message || String(err)});
+    })
+    .getView("view_broadcast");
+}
+
+function loadDailyScrum(opts = {}){
+
+  window.currentAppView = "DAILY";
+
+  _configureSidebarTrash({visible: false});
+
+  showLoading("Cargando daily scrum...");
+
+  google.script.run
+    .withSuccessHandler(html => {
+      renderView(html);
+      hideLoading();
+
+      if(typeof initDailyScrum === "function"){
+        initDailyScrum(opts || {});
+      }
+    })
+    .withFailureHandler(err => {
+      hideLoading();
+      Swal.fire({icon:'error',title:'Error',text: err.message || String(err)});
+    })
+    .getView("view_daily");
+}
+
+function mostrarHistorialDocumento(docId){
+
+  const doc = (window.docsById || {})[docId];
+
+  if(!doc){
+    return;
+  }
+
+  const historial = Array.isArray(doc.historial) ? doc.historial : [];
+
+  const title = document.getElementById("modalDocHistorialTitle");
+  const body = document.getElementById("modalDocHistorialBody");
+
+  if(title){
+    title.innerText = `Historial de aperturas - ${doc.nombre || "Documento"}`;
+  }
+
+  if(body){
+    if(historial.length === 0){
+      body.innerHTML = `<div class="text-muted">Sin historial de aperturas</div>`;
+    }else{
+      body.innerHTML = `
+        <div class="list-group">
+          ${historial.map(h => `
+            <div class="list-group-item">
+              <div class="fw-semibold">${h.usuario || "Sin usuario"}</div>
+              <div class="small text-muted">${h.rol || ""}</div>
+              <div class="small">${h.fecha || ""}</div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+  }
+
+  bootstrap.Modal
+    .getOrCreateInstance(document.getElementById("modalDocHistorial"))
+    .show();
+}
+
+function abrirDocumentoConHistorial(docId, docNombre, url){
+
+  const user = getClientUserContext();
+
+  google.script.run
+    .withSuccessHandler(() => {
+      window.open(url, "_blank");
+      loadDocumentacion();
+    })
+    .withFailureHandler(err => {
+      Swal.fire({icon:'error',title:'Error',text:err.message});
+    })
+    .DOCS_registerOpen(docId, docNombre, user);
+}
+
+
+function loadObservaciones(){
+
+  const categoria =
+    $("#DshCategoria").val();
+
+  const rolActual =
+    String(
+      window.currentRole
+      || (
+        document.getElementById("cmbRoles")
+          ? document.getElementById("cmbRoles").value
+          : ""
+      )
+      || ""
+    )
+    .trim()
+    .toUpperCase();
+
+  const puedeCrearTarea = [
+    "PM",
+    "LIDER_QA",
+    "LIDER_DEV"
+  ].includes(rolActual);
+
+  if(categoria === "TAREA" && !puedeCrearTarea){
+
+    Swal.fire({
+      icon: 'info',
+      title: 'Solo observaciones',
+      text: 'Solo el PM y los lideres pueden crear tareas. Tu perfil solo puede crear observaciones.'
+    });
+
+    return;
+  }
+
+  showLoading(
+    "Cargando formulario..."
+  );
+
+  google.script.run
+
+    .withSuccessHandler(html => {
+
+
+      renderView(html);
+
+        if(categoria === "TAREA"){
+
+          setTimeout(() => {
+
+            $("#tituloObservacion")
+              .text("Nueva Tarea");
+
+            $("#guardaNuevosRegistros")
+
+              .text("Guardar Tarea")
+
+              .attr(
+                "onclick",
+                "guardarTarea()"
+              );
+
+              
+            $("#btnObservacionVolver")
+
+              .attr(
+                "onclick",
+                "loadDashboard({view:'TAREAS',categoria:'TAREA'})"
+              );
+
+
+          },100);
+
+        }
+
+
+      hideLoading();
+    })
+
+    .withFailureHandler(err => {
+
+      hideLoading();
+
+      console.error(err);
+
+      Swal.fire({
+
+        icon:'error',
+
+        title:'Error',
+
+        text:err.message
+      });
+    })
+
+    .getView(
+      "view_observaciones"
+    );
+}
+
+</script>
+
+<script>
+
+function cargarUsuariosLogin() {
+
+  
+  Swal.fire({
+
+    title: 'Cargando usuarios...',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    showConfirmButton: false,
+
+    didOpen: () => {
+
+      Swal.showLoading();
+    }
+  });
+
+  google.script.run
+    .withSuccessHandler(users => {
+      Swal.close();
+      const select =
+        document.getElementById(
+          "txtUser"
+        );
+
+      select.innerHTML =
+        `<option value="">
+          Seleccionar usuario
+        </option>`;
+
+      users.forEach(user => {
+
+        select.innerHTML += `
+
+          <option value="${user.nombre}">
+
+            ${user.nombre}
+            (${user.rol})
+
+          </option>
+
+        `;
+      });
+
+      $('#txtUser').select2({
+
+        width:'100%',
+
+        placeholder:'Buscar usuario',
+
+        allowClear:true
+
+      });
+
+    })
+    .obtenerUsuariosActivos();
+}
+
+</script>
+
+<script>
+
+function cargarRolesNavbar(user){
+
+  const cmb =
+    document.getElementById(
+      "cmbRoles"
+    );
+
+  cmb.innerHTML = "";
+
+  // =========================
+  // ROLES
+  // =========================
+
+  const roles =
+    String(user.roles || "")
+      .split(";");
+
+  roles.forEach(rol => {
+
+    rol = rol.trim();
+
+    cmb.innerHTML += `
+
+      <option value="${rol}">
+
+        ${rol}
+
+      </option>
+
+    `;
+  });
+
+  // =========================
+  // ROL ACTUAL
+  // =========================
+
+  cmb.value =
+  String(user.rol)
+    .trim();
+
+  window.currentRole =
+    cmb.value;
+  
+
+  // =========================
+  // CAMBIO
+  // =========================
+
+  cmb.onchange = () => {
+    
+    window.currentRole =
+      cmb.value;
+
+    console.log(
+      "ROL:",
+      window.currentRole
+    );
+
+    // RECARGAR TABLA
+    
+    actualizarPermisosUI(
+      window.currentRole
+    );
+
+    if(
+      window.currentAppView === "KANBAN"
+    ){
+
+      refreshKanban();
+      refreshSidebarObservacionesCounter();
+
+      return;
+    }
+
+    if(
+      window.currentAppView === "BROADCAST"
+      || window.currentAppView === "DAILY"
+    ){
+      refreshSidebarObservacionesCounter();
+      return;
+    }
+
+    _safeCargarTablaObservaciones();
+  };
+  
+}
+
+</script>
+
+<script>
+
+function actualizarPermisosUI(rol){
+
+  const btn =
+    document.getElementById(
+      "btnNuevaObservacion"
+    );
+
+  // =========================
+  // SI NO EXISTE
+  // =========================
+
+  if(!btn){
+    return;
+  }
+
+  // Permitir crear observaciones para todos los roles.
+  btn.classList.remove(
+    "d-none"
+  );
+}
+
+</script>
+
+<script>
+
+window.onload = () => {
+  
+
+  cargarUsuariosLogin();
+
+};
+
+</script>
+
+<script>
+
+const LOADING_MANAGER = {
+  pending: 0,
+  isOpen: false,
+  minVisibleMs: 350,
+  openedAt: 0,
+  hideTimer: null,
+  lastText: "Cargando..."
+};
+
+function showLoading(
+  text = "Cargando..."
+){
+
+  LOADING_MANAGER.pending += 1;
+  LOADING_MANAGER.lastText = text || "Cargando...";
+
+  if(LOADING_MANAGER.hideTimer){
+    clearTimeout(LOADING_MANAGER.hideTimer);
+    LOADING_MANAGER.hideTimer = null;
+  }
+
+  if(LOADING_MANAGER.isOpen){
+    Swal.update({title: LOADING_MANAGER.lastText});
+    return;
+  }
+
+  LOADING_MANAGER.openedAt = Date.now();
+  LOADING_MANAGER.isOpen = true;
+
+  Swal.fire({
+
+    title: LOADING_MANAGER.lastText,
+
+    allowOutsideClick:false,
+
+    allowEscapeKey:false,
+
+    showConfirmButton:false,
+
+    didOpen:()=>{
+
+      Swal.showLoading();
+    }
+  });
+}
+
+function hideLoading(){
+
+  return new Promise(resolve => {
+
+    if(LOADING_MANAGER.pending > 0){
+      LOADING_MANAGER.pending -= 1;
+    }
+
+    if(LOADING_MANAGER.pending > 0){
+      resolve(false);
+      return;
+    }
+
+    const elapsed = Date.now() - LOADING_MANAGER.openedAt;
+    const waitMs = Math.max(0, LOADING_MANAGER.minVisibleMs - elapsed);
+
+    if(LOADING_MANAGER.hideTimer){
+      clearTimeout(LOADING_MANAGER.hideTimer);
+      LOADING_MANAGER.hideTimer = null;
+    }
+
+    LOADING_MANAGER.hideTimer = setTimeout(() => {
+
+      if(LOADING_MANAGER.pending > 0){
+        resolve(false);
+        return;
+      }
+
+      Swal.close();
+      LOADING_MANAGER.isOpen = false;
+      LOADING_MANAGER.hideTimer = null;
+      resolve(true);
+
+    }, waitMs);
+  });
+}
+
+function resetLoading(){
+
+  LOADING_MANAGER.pending = 0;
+
+  if(LOADING_MANAGER.hideTimer){
+    clearTimeout(LOADING_MANAGER.hideTimer);
+    LOADING_MANAGER.hideTimer = null;
+  }
+
+  LOADING_MANAGER.isOpen = false;
+  Swal.close();
+}
+
+</script>
+
+
+<script>
+
+function runServer(fnName, ...args){
+
+  return new Promise((resolve, reject) => {
+
+    google.script.run
+
+      .withSuccessHandler(resolve)
+
+      .withFailureHandler(reject)
+
+      [fnName](...args);
+
+  });
+}
+</script>

@@ -1,0 +1,39 @@
+<div class="container-fluid p-4 studio-shell">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="d-flex align-items-center gap-2 mb-0">
+      <i class="bi bi-people text-primary"></i>
+      Usuarios
+    </h3>
+  </div>
+
+  <div class="table-scroll">
+    <table class="table table-striped table-hover mb-0" id="tblUsuariosAdmin">
+      <thead></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="modalUsuarioSprint" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Usuario</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="usrIdModal">
+        <input type="hidden" id="usrNombreModal">
+        <label class="form-label">Usuario</label>
+        <input id="usrNombreLabel" class="form-control mb-3" disabled>
+
+        <label class="form-label">JSON de asignaciones por sprint</label>
+        <textarea id="usrSprintRolesJson" class="form-control" rows="8" placeholder='{"SPRINT_001":"DEV","SPRINT_002":"QA"}'></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button id="btnGuardarUsuarioSprint" class="btn btn-primary" onclick="guardarRolesSprintUsuario()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>

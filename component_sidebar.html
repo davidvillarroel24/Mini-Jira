@@ -1,0 +1,96 @@
+<div class="d-grid gap-2">
+
+  <button
+    class="btn btn-primary"
+    onclick="loadKanban({ sprintId:'TODOS' })"
+  >
+    <i class="bi bi-kanban me-2"></i>
+    Tablero Kanban
+  </button>
+
+  <button
+    class="btn btn-primary"
+    onclick="loadDailyScrum()"
+  >
+    <i class="bi bi-calendar2-check me-2"></i>
+    Daily Scrum
+  </button>
+
+  <button
+    id="btnMisObservaciones"
+    class="btn btn-primary"
+    onclick="loadDashboard({
+      view:'ACTIVAS',
+      categoria:'OBSERVACION'
+    })"
+  >
+    <i class="bi bi-card-checklist me-2"></i>
+    Mis Observaciones
+    <span id="badgeMisObservaciones" class="badge text-bg-light ms-2 d-none">0</span>
+  </button>
+
+  <button
+    class="btn btn-primary"
+    onclick="loadDashboard({
+      view:'TAREAS',
+      categoria:'TAREA'
+    })"
+  >
+    <i class="bi bi-kanban-fill me-2"></i>
+    Tareas
+  </button>
+
+  <button
+    class="btn btn-primary"
+    onclick="loadDocumentacion()"
+  >
+    <i class="bi bi-journal-text me-2"></i>
+    Documentacion
+  </button>
+
+  <button
+    class="btn btn-primary"
+    onclick="loadBroadcasts()"
+  >
+    <i class="bi bi-megaphone me-2"></i>
+    Broadcast
+  </button>
+
+  <button
+    class="btn btn-primary"
+    onclick="loadSprints()"
+  >
+    <i class="bi bi-list-task me-2"></i>
+    Sprints
+  </button>
+
+  <button
+    class="btn btn-primary"
+    onclick="loadCalendario()"
+  >
+    <i class="bi bi-calendar3 me-2"></i>
+    Calendario
+  </button>
+
+  <button
+    id="btnPapelera"
+    class="btn btn-secondary"
+    onclick="loadDashboard({
+      view:'ELIMINADAS',
+      categoria:'OBSERVACION'
+    })"
+  >
+    <i class="bi bi-trash3 me-2"></i>
+    Papelera Observaciones
+  </button>
+
+  <button
+    class="btn btn-primary"
+    onclick="loadUsuariosAdmin()"
+    hidden
+  >
+    <i class="bi bi-people me-2"></i>
+    Usuarios
+  </button>
+
+</div>

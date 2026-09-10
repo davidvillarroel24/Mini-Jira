@@ -1,0 +1,375 @@
+<div class="container-fluid p-4 studio-shell">
+
+  <div class="d-flex justify-content-between align-items-center mb-4">
+
+    <h3 class="d-flex align-items-center gap-2 mb-0">
+      <i class="bi bi-speedometer2 text-primary"></i>
+      Dashboard QA
+    </h3>
+
+    <button
+      id="btnPreviewInforme"
+      class="btn btn-dark"
+      onclick="abrirModalExportInforme()"
+    >
+      <i class="bi bi-file-earmark-pdf-fill me-1"></i>
+      Exportar informe
+
+    </button>
+    
+    <button
+      id="btnNuevaObservacion"
+      class="btn btn-primary"
+      onclick="loadObservaciones()"
+    >
+      <i class="bi bi-plus-circle-fill me-1"></i>
+      Nueva Observación
+    </button>
+
+  </div>
+
+  <div class="table-scroll-hint mb-2">
+    Mantén presionadas las flechas para desplazarte horizontalmente por las columnas.
+  </div>
+
+  <div class="dashboard-controls">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label mb-1">Estado</label>
+        <select id="fltEstado" class="form-select form-select-sm">
+          <option value="TODOS">Todos</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label mb-1">Prioridad</label>
+        <select id="fltPrioridad" class="form-select form-select-sm">
+          <option value="TODOS">Todos</option>
+        </select>
+      </div>
+      <div class="col-md-3" id="fltSprintWrap">
+        <label class="form-label mb-1">Sprint</label>
+        <select id="fltSprint" class="form-select form-select-sm">
+          <option value="TODOS">Todos</option>
+        </select>
+      </div>
+      <div class="col-md-3 text-md-end">
+        <label class="form-label mb-1 d-block">Columnas</label>
+        <div class="dropdown d-inline-block">
+          <button
+            class="btn btn-outline-primary btn-sm dropdown-toggle"
+            type="button"
+            data-bs-toggle="dropdown"
+            aria-expanded="false"
+          >
+            <i class="bi bi-layout-three-columns me-1"></i>
+            Visibilidad de columnas
+          </button>
+          <div id="dropdownColumnas" class="dropdown-menu dropdown-menu-end p-2" style="max-height:320px;overflow:auto;min-width:260px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex justify-content-end align-items-center gap-2 mb-2">
+    <button
+      id="btnScrollTablaLeft"
+      type="button"
+      class="btn btn-outline-primary btn-sm btn-scroll-table"
+      title="Desplazar tabla a la izquierda"
+    >
+      <i class="bi bi-chevron-left"></i>
+    </button>
+    <button
+      id="btnScrollTablaRight"
+      type="button"
+      class="btn btn-outline-primary btn-sm btn-scroll-table"
+      title="Desplazar tabla a la derecha"
+    >
+      <i class="bi bi-chevron-right"></i>
+    </button>
+  </div>
+
+  <div class="table-scroll" id="tblObservacionesWrap">
+    <table
+      id="tblObservaciones"
+      class="table table-striped table-hover"
+      style="width:100%"
+    >
+      <thead></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  
+</div>
+
+<div
+  class="modal fade"
+  id="modalExportInforme"
+  tabindex="-1"
+>
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title d-flex align-items-center gap-2">
+          <i class="bi bi-journal-richtext text-primary"></i>
+          Exportar informe de desarrollo
+        </h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+        ></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label fw-bold">Rango de fechas</label>
+          </div>
+          <div class="col-md-6">
+            <label for="repFromDate" class="form-label">Desde</label>
+            <input id="repFromDate" type="date" class="form-control">
+          </div>
+          <div class="col-md-6">
+            <label for="repToDate" class="form-label">Hasta</label>
+            <input id="repToDate" type="date" class="form-control">
+          </div>
+
+          <div class="col-12">
+            <label class="form-label fw-bold">Alcance</label>
+            <select id="repScope" class="form-select">
+              <option value="SELECTED">Solo seleccionadas en tabla</option>
+              <option value="FILTERED" selected>Todas las filtradas</option>
+              <option value="DATE_RANGE">Todas por rango de fechas</option>
+            </select>
+          </div>
+
+          <div class="col-12">
+            <label class="form-label fw-bold">Contenido a incluir</label>
+            <div class="form-check">
+              <input id="repIncludeTasks" class="form-check-input" type="checkbox" checked>
+              <label class="form-check-label" for="repIncludeTasks">Tareas asignadas</label>
+            </div>
+            <div class="form-check">
+              <input id="repIncludeObs" class="form-check-input" type="checkbox" checked>
+              <label class="form-check-label" for="repIncludeObs">Observaciones realizadas</label>
+            </div>
+            <div class="form-check">
+              <input id="repIncludeChats" class="form-check-input" type="checkbox" checked>
+              <label class="form-check-label" for="repIncludeChats">Chat y decisiones</label>
+            </div>
+            <div class="form-check">
+              <input id="repIncludeImages" class="form-check-input" type="checkbox" checked>
+              <label class="form-check-label" for="repIncludeImages">Evidencias de imagen</label>
+            </div>
+            <div class="form-check">
+              <input id="repIncludeHistory" class="form-check-input" type="checkbox" checked>
+              <label class="form-check-label" for="repIncludeHistory">Historial de estados</label>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <label for="repGroupBy" class="form-label fw-bold">Agrupacion</label>
+            <select id="repGroupBy" class="form-select">
+              <option value="RESPONSABLE" selected>Por responsable</option>
+              <option value="ESTADO">Por estado</option>
+              <option value="PRIORIDAD">Por prioridad</option>
+              <option value="TIPO">Por tipo</option>
+            </select>
+          </div>
+
+          <div class="col-md-6">
+            <label for="repDetailLevel" class="form-label fw-bold">Formato del informe</label>
+            <select id="repDetailLevel" class="form-select">
+              <option value="RESUMEN">Resumen ejecutivo</option>
+              <option value="DETALLADO" selected>Detallado</option>
+              <option value="DETALLADO_CHAT">Detallado + chat completo</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
+          <i class="bi bi-x-circle me-1"></i>
+          Cancelar
+        </button>
+        <button class="btn btn-info" onclick="previewInformeDesarrollo()">
+          <i class="bi bi-eye me-1"></i>
+          Vista previa
+        </button>
+        <button class="btn btn-dark" onclick="descargarInformeDesarrolloPdf()">
+          <i class="bi bi-download me-1"></i>
+          Descargar PDF
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div
+  class="modal fade"
+  id="modalComentarios"
+  tabindex="-1"
+>
+
+  <div
+    class="modal-dialog modal-lg"
+  >
+
+    <div class="modal-content">
+
+      <div class="modal-header">
+
+
+        <h5
+          id="lblTituloComentarios"
+          class="modal-title"
+        >
+          Comentarios
+        </h5>
+
+        <button
+          class="btn-close"
+          data-bs-dismiss="modal"
+        ></button>
+
+      </div>
+
+      <div class="modal-body">
+
+
+        
+        <div
+          id="lblInfoComentarios"
+          class="mb-3"
+        ></div>
+
+        <button
+          id="btnVerObsChat"
+          class="
+            btn
+            btn-primary
+            btn-sm
+            mb-3
+          "
+        >
+          <i class="bi bi-eye me-1"></i>Ver Observación
+        </button>
+
+        <div
+          id="txtHistorialComentarios"
+          class="
+            border
+            rounded
+            p-3
+            bg-light
+            mb-3
+          "
+          style="
+            height:400px;
+            overflow-y:auto;
+          "
+        ></div>
+
+        <textarea
+          id="txtNuevoComentario"
+          class="form-control"
+          rows="4"
+          placeholder="Escriba un comentario..."
+        ></textarea>
+
+        <div
+          id="contenedorRevision"
+          class="form-check mt-3"
+        >
+
+          <input
+            type="hidden"
+            id="chatObsId"
+          >
+
+          
+          <input
+            type="hidden"
+            id="DshCategoria"
+          >
+
+          <input
+            type="hidden"
+            id="chatTipo"
+          >
+
+          <div class="d-none">
+            
+            <input
+              type="checkbox"
+              id="chkMarcarRevision"
+              class="form-check-input"
+            >
+
+            <label
+              class="form-check-label"
+            >
+              Marcar como listo para revisión
+            </label>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+
+        <button
+          class="btn btn-success"
+          onclick="enviarComentario()"
+        >
+          Enviar
+        </button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+
+<div
+  class="modal fade"
+  id="modalObservacion"
+  tabindex="-1"
+>
+
+  <div class="modal-dialog modal-xl">
+
+    <div class="modal-content">
+
+      <div class="modal-header">
+
+        <h5 class="modal-title">
+          Detalle Observación
+        </h5>
+
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+        ></button>
+
+      </div>
+
+      <div
+        class="modal-body"
+        id="detalleObservacion"
+      >
+      </div>
+
+    </div>
+
+  </div>
+</div>

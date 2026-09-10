@@ -1,0 +1,98 @@
+<div
+  class="modal fade"
+  id="modalComentarios"
+  tabindex="-1"
+>
+
+  <div
+    class="modal-dialog modal-lg"
+  >
+
+    <div class="modal-content">
+
+      <div class="modal-header">
+
+        <h5
+          id="lblTituloComentarios"
+          class="modal-title"
+        >
+          Comentarios
+        </h5>
+
+        <button
+          class="btn-close"
+          data-bs-dismiss="modal"
+        ></button>
+
+      </div>
+
+      <div class="modal-body">
+
+        <div
+          id="lblInfoComentarios"
+          class="mb-3"
+        ></div>
+
+        <button
+          id="btnVerObsChat"
+          class="
+            btn
+            btn-primary
+            btn-sm
+            mb-3
+          "
+        >
+          👁 Ver Observación
+        </button>
+
+        <textarea
+          id="txtHistorialComentarios"
+          class="form-control mb-3"
+          rows="15"
+          readonly
+        ></textarea>
+
+        <textarea
+          id="txtNuevoComentario"
+          class="form-control"
+          rows="4"
+          placeholder="Escriba un comentario..."
+        ></textarea>
+
+        <div
+          id="contenedorRevision"
+          class="form-check mt-3"
+        >
+
+          <input
+            type="checkbox"
+            class="form-check-input"
+            id="chkRevision"
+          >
+
+          <label
+            class="form-check-label"
+          >
+            Marcar como listo para revisión
+          </label>
+
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+
+        <button
+          class="btn btn-success"
+          onclick="enviarComentario()"
+        >
+          Enviar
+        </button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>

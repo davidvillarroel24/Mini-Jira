@@ -1,0 +1,428 @@
+<script>
+window.broadcastState = {
+  data: [],
+  users: [],
+  viewMode: "ACTIVAS",
+  modalMode: "CREATE"
+};
+
+window.BROADCAST_ROLE_OPTIONS = Array.isArray(window.BROADCAST_ROLE_OPTIONS)
+  ? window.BROADCAST_ROLE_OPTIONS
+  : [
+      "DEV",
+      "QA",
+      "LIDER_DEV",
+      "LIDER_QA",
+      "PM"
+    ];
+
+function _broadcastEscape(value){
+  return String(value === null || value === undefined ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function _broadcastDestroyTable(){
+  if($.fn.DataTable.isDataTable("#tblBroadcast")){
+    $("#tblBroadcast").DataTable().clear().destroy();
+  }
+}
+
+function _broadcastSetReadOnly(isReadOnly){
+  const root = document.getElementById("broadcastModalBody");
+
+  if(!root){
+    return;
+  }
+
+  root.querySelectorAll("input, select, textarea").forEach(el => {
+    if(el.type === "hidden"){
+      return;
+    }
+
+    el.disabled = !!isReadOnly;
+  });
+
+  const saveBtn = document.getElementById("btnGuardarBroadcast");
+
+  if(saveBtn){
+    saveBtn.classList.toggle("d-none", !!isReadOnly);
+  }
+}
+
+function _broadcastRenderScopeSelectors(){
+  const alcance = String(document.getElementById("brdAlcance").value || "TODOS").toUpperCase();
+
+  const wrapRoles = document.getElementById("brdRolesWrap");
+  const wrapUsers = document.getElementById("brdUsuariosWrap");
+
+  if(wrapRoles){
+    wrapRoles.classList.toggle("d-none", alcance !== "ROL");
+  }
+
+  if(wrapUsers){
+    wrapUsers.classList.toggle("d-none", alcance !== "USUARIOS");
+  }
+}
+
+function _broadcastRenderRoleChecks(selected = []){
+  const list = document.getElementById("brdRolesList");
+
+  if(!list){
+    return;
+  }
+
+  const selectedSet = new Set((selected || []).map(x => String(x).trim().toUpperCase()));
+
+  list.innerHTML = window.BROADCAST_ROLE_OPTIONS.map(rol => `
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="checkbox" name="brdRolesChk" value="${rol}" id="brdRole_${rol}" ${selectedSet.has(rol) ? "checked" : ""}>
+      <label class="form-check-label" for="brdRole_${rol}">${rol}</label>
+    </div>
+  `).join("");
+}
+
+function _broadcastRenderUserChecks(selected = []){
+  const list = document.getElementById("brdUsuariosList");
+
+  if(!list){
+    return;
+  }
+
+  const selectedSet = new Set((selected || []).map(x => String(x).trim().toUpperCase()));
+  const users = Array.isArray(window.broadcastState.users) ? window.broadcastState.users : [];
+
+  list.innerHTML = users.map(user => {
+    const name = String(user && user.nombre || "").trim();
+    const role = String(user && user.rol || "").trim();
+    const safeName = _broadcastEscape(name);
+    const safeKey = name.replace(/[^a-zA-Z0-9_-]/g, "_") || "user";
+    const checked = selectedSet.has(name.toUpperCase()) ? "checked" : "";
+
+    return `
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="brdUsuariosChk" value="${safeName}" id="brdUser_${safeKey}" ${checked}>
+        <label class="form-check-label" for="brdUser_${safeKey}">${safeName} <span class="text-muted">(${_broadcastEscape(role)})</span></label>
+      </div>
+    `;
+  }).join("");
+}
+
+function _broadcastGetCheckedValues(selector){
+  return Array.from(document.querySelectorAll(selector))
+    .filter(chk => chk.checked)
+    .map(chk => String(chk.value || "").trim())
+    .filter(Boolean);
+}
+
+function _broadcastOpenModalFromRow(row, mode){
+  const data = row || {};
+  window.broadcastState.modalMode = mode || "EDIT";
+
+  document.getElementById("brdId").value = String(data.id || "");
+  document.getElementById("brdTitulo").value = String(data.titulo || "");
+  document.getElementById("brdMensaje").value = String(data.mensaje || "");
+  document.getElementById("brdNivel").value = String(data.nivel || "INFO");
+  document.getElementById("brdAlcance").value = String(data.alcance || "TODOS");
+
+  _broadcastRenderRoleChecks(Array.isArray(data.roles) ? data.roles : []);
+  _broadcastRenderUserChecks(Array.isArray(data.usuarios) ? data.usuarios : []);
+  _broadcastRenderScopeSelectors();
+
+  _broadcastSetReadOnly(mode === "VIEW");
+
+  const title = document.querySelector("#modalBroadcast .modal-title");
+
+  if(title){
+    title.textContent = mode === "CREATE" ? "Nuevo broadcast" : (mode === "VIEW" ? "Broadcast (solo lectura)" : "Editar broadcast");
+  }
+
+  bootstrap.Modal
+    .getOrCreateInstance(document.getElementById("modalBroadcast"))
+    .show();
+}
+
+function abrirModalBroadcast(){
+  _broadcastOpenModalFromRow({
+    id: "",
+    titulo: "",
+    mensaje: "",
+    nivel: "INFO",
+    alcance: "TODOS",
+    roles: [],
+    usuarios: []
+  }, "CREATE");
+}
+
+function verBroadcast(id){
+  const row = (window.broadcastState.data || []).find(x => String(x.id || "") === String(id || ""));
+
+  if(!row){
+    return;
+  }
+
+  _broadcastOpenModalFromRow(row, "VIEW");
+}
+
+function editarBroadcast(id){
+  const row = (window.broadcastState.data || []).find(x => String(x.id || "") === String(id || ""));
+
+  if(!row){
+    return;
+  }
+
+  if(!row.canManage){
+    Swal.fire({icon:"warning", title:"Sin permisos", text:"Solo el creador puede editar este broadcast."});
+    return;
+  }
+
+  _broadcastOpenModalFromRow(row, "EDIT");
+}
+
+function guardarBroadcast(){
+
+  if(window.broadcastState.modalMode === "VIEW"){
+    return;
+  }
+
+  const payload = {
+    id: String(document.getElementById("brdId").value || "").trim(),
+    titulo: String(document.getElementById("brdTitulo").value || "").trim(),
+    mensaje: String(document.getElementById("brdMensaje").value || "").trim(),
+    nivel: String(document.getElementById("brdNivel").value || "INFO").trim(),
+    alcance: String(document.getElementById("brdAlcance").value || "TODOS").trim(),
+    roles: _broadcastGetCheckedValues("input[name='brdRolesChk']"),
+    usuarios: _broadcastGetCheckedValues("input[name='brdUsuariosChk']")
+  };
+
+  if(!payload.titulo || !payload.mensaje){
+    Swal.fire({icon:"warning", title:"Validacion", text:"Titulo y mensaje son obligatorios."});
+    return;
+  }
+
+  if(payload.alcance === "ROL" && payload.roles.length === 0){
+    Swal.fire({icon:"warning", title:"Validacion", text:"Debe seleccionar al menos un rol."});
+    return;
+  }
+
+  if(payload.alcance === "USUARIOS" && payload.usuarios.length === 0){
+    Swal.fire({icon:"warning", title:"Validacion", text:"Debe seleccionar al menos un usuario."});
+    return;
+  }
+
+  showLoading("Guardando broadcast...");
+
+  runServer(
+    "BROADCAST_save",
+    payload,
+    typeof getClientUserContext === "function" ? getClientUserContext() : null
+  )
+  .then(() => {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("modalBroadcast")).hide();
+    return refreshBroadcasts();
+  })
+  .then(() => {
+    Swal.fire({icon:"success", title:"Guardado", timer:1200, showConfirmButton:false});
+  })
+  .catch(err => {
+    Swal.fire({icon:"error", title:"Error", text: err.message || String(err)});
+  })
+  .finally(() => {
+    hideLoading();
+  });
+}
+
+function publicarBroadcast(id){
+  Swal.fire({
+    title: "Publicar broadcast",
+    text: "Se validaran conflictos de alcance antes de publicar.",
+    icon: "question",
+    showCancelButton: true,
+    confirmButtonText: "Publicar",
+    cancelButtonText: "Cancelar"
+  }).then(result => {
+    if(!result.isConfirmed){
+      return;
+    }
+
+    showLoading("Publicando broadcast...");
+
+    runServer(
+      "BROADCAST_publish",
+      {id: id},
+      typeof getClientUserContext === "function" ? getClientUserContext() : null
+    )
+    .then(() => refreshBroadcasts())
+    .then(() => {
+      if(typeof refreshNavbarNotifications === "function"){
+        refreshNavbarNotifications({silent: true});
+      }
+
+      Swal.fire({icon:"success", title:"Publicado", timer:1200, showConfirmButton:false});
+    })
+    .catch(err => {
+      Swal.fire({icon:"error", title:"Error", text: err.message || String(err)});
+    })
+    .finally(() => {
+      hideLoading();
+    });
+  });
+}
+
+function eliminarBroadcast(id){
+  Swal.fire({
+    title: "Eliminar broadcast",
+    text: "Se enviara a la papelera.",
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonText: "Eliminar",
+    cancelButtonText: "Cancelar"
+  }).then(result => {
+    if(!result.isConfirmed){
+      return;
+    }
+
+    showLoading("Eliminando broadcast...");
+
+    runServer(
+      "BROADCAST_delete",
+      id,
+      typeof getClientUserContext === "function" ? getClientUserContext() : null
+    )
+    .then(() => refreshBroadcasts())
+    .then(() => {
+      if(typeof refreshNavbarNotifications === "function"){
+        refreshNavbarNotifications({silent: true});
+      }
+
+      Swal.fire({icon:"success", title:"Enviado a papelera", timer:1200, showConfirmButton:false});
+    })
+    .catch(err => {
+      Swal.fire({icon:"error", title:"Error", text: err.message || String(err)});
+    })
+    .finally(() => {
+      hideLoading();
+    });
+  });
+}
+
+function reciclarBroadcast(id){
+  showLoading("Reciclando broadcast...");
+
+  runServer(
+    "BROADCAST_restore",
+    id,
+    typeof getClientUserContext === "function" ? getClientUserContext() : null
+  )
+  .then(() => refreshBroadcasts())
+  .then(() => {
+    Swal.fire({icon:"success", title:"Restaurado", timer:1200, showConfirmButton:false});
+  })
+  .catch(err => {
+    Swal.fire({icon:"error", title:"Error", text: err.message || String(err)});
+  })
+  .finally(() => {
+    hideLoading();
+  });
+}
+
+function _broadcastRenderTable(rows){
+  _broadcastDestroyTable();
+
+  const showDeleted = window.broadcastState.viewMode === "ELIMINADAS";
+
+  $('#tblBroadcast').DataTable({
+    destroy: true,
+    responsive: false,
+    scrollX: true,
+    autoWidth: false,
+    pageLength: 10,
+    data: rows,
+    columns: [
+      {data: "id"},
+      {data: "titulo"},
+      {data: "nivel"},
+      {data: "alcanceLabel"},
+      {data: "estado"},
+      {
+        data: "activo",
+        render: value => value ? "SI" : "NO"
+      },
+      {data: "creadoPor"},
+      {data: "fechaCreacion"},
+      {
+        data: null,
+        orderable: false,
+        searchable: false,
+        width: "280px",
+        render: row => {
+          const escapedId = String(row.id || "").replace(/'/g, "\\'");
+          const buttons = showDeleted
+            ? `
+              <button class="btn btn-sm btn-primary" onclick="verBroadcast('${escapedId}')" title="Ver"><i class="bi bi-eye"></i></button>
+              <button class="btn btn-success btn-sm" onclick="reciclarBroadcast('${escapedId}')" title="Reciclar"><i class="bi bi-arrow-counterclockwise"></i></button>
+            `
+            : `
+              <button class="btn btn-sm btn-primary" onclick="verBroadcast('${escapedId}')" title="Ver"><i class="bi bi-eye"></i></button>
+              ${row.canManage ? `<button class="btn btn-warning btn-sm" onclick="editarBroadcast('${escapedId}')" title="Editar"><i class="bi bi-pencil-square"></i></button>` : ""}
+              ${row.canManage ? `<button class="btn btn-info btn-sm" onclick="publicarBroadcast('${escapedId}')" title="Publicar"><i class="bi bi-megaphone"></i></button>` : ""}
+              ${row.canManage ? `<button class="btn btn-danger btn-sm" onclick="eliminarBroadcast('${escapedId}')" title="Eliminar"><i class="bi bi-trash3"></i></button>` : ""}
+            `;
+
+          return `<div class="d-inline-flex flex-nowrap gap-1 align-items-center">${buttons}</div>`;
+        }
+      }
+    ]
+  });
+}
+
+function refreshBroadcasts(){
+  return runServer(
+    "BROADCAST_loadData",
+    {view: window.broadcastState.viewMode},
+    typeof getClientUserContext === "function" ? getClientUserContext() : null
+  )
+  .then(pack => {
+    const payload = pack && typeof pack === "object" ? pack : {};
+
+    window.broadcastState.data = Array.isArray(payload.data) ? payload.data : [];
+    window.broadcastState.users = Array.isArray(payload.users) ? payload.users : [];
+
+    _broadcastRenderRoleChecks([]);
+    _broadcastRenderUserChecks([]);
+    _broadcastRenderTable(window.broadcastState.data);
+  });
+}
+
+function initBroadcasts(opts = {}){
+  window.broadcastState.viewMode = opts && opts.view === "ELIMINADAS" ? "ELIMINADAS" : "ACTIVAS";
+
+  const alcance = document.getElementById("brdAlcance");
+
+  if(alcance){
+    alcance.onchange = _broadcastRenderScopeSelectors;
+  }
+
+  showLoading("Cargando broadcasts...");
+
+  refreshBroadcasts()
+    .catch(err => {
+      Swal.fire({icon:"error", title:"Error", text: err.message || String(err)});
+    })
+    .finally(() => {
+      hideLoading();
+    });
+}
+
+window.initBroadcasts = initBroadcasts;
+window.abrirModalBroadcast = abrirModalBroadcast;
+window.verBroadcast = verBroadcast;
+window.editarBroadcast = editarBroadcast;
+window.guardarBroadcast = guardarBroadcast;
+window.publicarBroadcast = publicarBroadcast;
+window.eliminarBroadcast = eliminarBroadcast;
+window.reciclarBroadcast = reciclarBroadcast;
+</script>

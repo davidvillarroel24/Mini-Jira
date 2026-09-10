@@ -1,0 +1,89 @@
+<div class="container-fluid p-4 studio-shell">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="d-flex align-items-center gap-2 mb-0">
+      <i class="bi bi-megaphone text-primary"></i>
+      Broadcast
+    </h3>
+    <button class="btn btn-primary" onclick="abrirModalBroadcast()">
+      <i class="bi bi-plus-circle me-1"></i>
+      Crear broadcast
+    </button>
+  </div>
+
+  <div class="table-scroll">
+    <table class="table table-striped table-hover mb-0" id="tblBroadcast">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Titulo</th>
+          <th>Nivel</th>
+          <th>Alcance</th>
+          <th>Estado</th>
+          <th>Activo</th>
+          <th>Creado por</th>
+          <th>Fecha</th>
+          <th style="min-width:280px;">Acciones</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="modalBroadcast" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Broadcast</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="broadcastModalBody">
+        <input type="hidden" id="brdId">
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Titulo</label>
+            <input id="brdTitulo" class="form-control" maxlength="120">
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Nivel</label>
+            <select id="brdNivel" class="form-select">
+              <option value="INFO">INFO</option>
+              <option value="WARNING">WARNING</option>
+              <option value="CRITICO">CRITICO</option>
+            </select>
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Alcance</label>
+            <select id="brdAlcance" class="form-select">
+              <option value="TODOS">TODOS</option>
+              <option value="ROL">ROL</option>
+              <option value="USUARIOS">USUARIOS</option>
+            </select>
+          </div>
+
+          <div class="col-12">
+            <label class="form-label">Mensaje</label>
+            <textarea id="brdMensaje" rows="4" class="form-control"></textarea>
+          </div>
+
+          <div class="col-12 d-none" id="brdRolesWrap">
+            <label class="form-label">Roles destino</label>
+            <div id="brdRolesList" class="border rounded p-2"></div>
+          </div>
+
+          <div class="col-12 d-none" id="brdUsuariosWrap">
+            <label class="form-label">Usuarios destino</label>
+            <div id="brdUsuariosList" class="border rounded p-2" style="max-height:220px;overflow:auto;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button id="btnGuardarBroadcast" class="btn btn-primary" onclick="guardarBroadcast()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>

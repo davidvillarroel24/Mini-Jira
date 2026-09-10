@@ -1,0 +1,862 @@
+<script>
+window.adminUsersCache = [];
+window.adminSprintsCache = [];
+window.adminCalendarioCache = [];
+window.adminUsersColumnOrder = [];
+window.adminUsersViewMode = "ACTIVAS";
+window.adminUserModalMode = "EDIT";
+window.adminSprintModalMode = "EDIT";
+window.adminCalendarioModalMode = "EDIT";
+window.adminSprintsViewMode = "ACTIVAS";
+window.adminCalendarioViewMode = "ACTIVAS";
+window.adminSprintsColumnOrder = [];
+window.adminCalendarioColumnOrder = [];
+
+const ADMIN_SPRINT_BINDINGS = [
+  { modelKey: "ID", formId: "bkId", saveKey: "ID" },
+  { modelKey: "Descripción", formId: "bkDescripcion", saveKey: "Descripción" },
+  { modelKey: "Sprint", formId: "bkSprint", saveKey: "Sprint" },
+  { modelKey: "Prioridad", formId: "bkPrioridad", saveKey: "Prioridad" },
+  { modelKey: "Esfuerzo", formId: "bkEsfuerzo", saveKey: "Esfuerzo" },
+  { modelKey: "Verificación", formId: "bkVerificacion", saveKey: "Verificación" },
+  { modelKey: "DEV", formId: "bkDev", saveKey: "DEV" },
+  { modelKey: "QA", formId: "bkQa", saveKey: "QA" }
+];
+
+const ADMIN_CALENDARIO_BINDINGS = [
+  { modelKey: "__rowNumber", formId: "calRowNumber", saveKey: "__rowNumber" },
+  { modelKey: "Módulo", formId: "calModulo", saveKey: "Módulo" },
+  { modelKey: "Actividades (RQ)", formId: "calActividades", saveKey: "Actividades (RQ)" },
+  { modelKey: "Sprint", formId: "calSprint", saveKey: "Sprint" },
+  { modelKey: "Inicio", formId: "calInicio", saveKey: "Inicio" },
+  { modelKey: "Fin", formId: "calFin", saveKey: "Fin" },
+  { modelKey: "Duración", formId: "calDuracion", saveKey: "Duración" }
+];
+
+function _asText(value){
+  return String(value === null || value === undefined ? "" : value);
+}
+
+function _adminIsTruthy(value){
+  const normalized = String(value === null || value === undefined ? "" : value).trim().toLowerCase();
+
+  return normalized === "true"
+    || normalized === "1"
+    || normalized === "si"
+    || normalized === "sí"
+    || normalized === "x";
+}
+
+function _destroyDataTableIfExists(selector){
+  if($.fn.DataTable.isDataTable(selector)){
+    $(selector).DataTable().clear().destroy();
+  }
+}
+
+function _adminColumnLabel(key){
+  return String(key || "").trim();
+}
+
+function _adminResolveKeys(rows, columnOrder){
+  const sourceKeys = rows && rows.length ? Object.keys(rows[0]) : [];
+  const ordered = Array.isArray(columnOrder) ? columnOrder.filter(Boolean) : [];
+
+  return ordered.length ? ordered : sourceKeys;
+}
+
+function _adminNormalizeKey(value){
+  return String(value === null || value === undefined ? "" : value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+}
+
+function _adminResolveValue(source, keys){
+  const row = source && typeof source === "object" ? source : {};
+  const lookup = Array.isArray(keys) ? keys : [keys];
+  const directKeys = lookup.filter(key => key !== null && key !== undefined).map(key => String(key));
+
+  for(let i = 0; i < directKeys.length; i++){
+    const key = directKeys[i];
+
+    if(Object.prototype.hasOwnProperty.call(row, key)){
+      const value = row[key];
+
+      if(value !== undefined && value !== null){
+        return value;
+      }
+    }
+  }
+
+  const normalizedTargets = directKeys.map(key => _adminNormalizeKey(key));
+  const sourceKeys = Object.keys(row);
+
+  for(let i = 0; i < sourceKeys.length; i++){
+    const sourceKey = sourceKeys[i];
+
+    if(normalizedTargets.includes(_adminNormalizeKey(sourceKey))){
+      const value = row[sourceKey];
+
+      if(value !== undefined && value !== null){
+        return value;
+      }
+    }
+  }
+
+  return "";
+}
+
+function _adminFillFormFromRow(bindings, row){
+  const source = row && typeof row === "object" ? row : {};
+
+  bindings.forEach(binding => {
+    const el = document.getElementById(binding.formId);
+
+    if(!el){
+      return;
+    }
+
+    const value = _adminResolveValue(source, [binding.modelKey, binding.saveKey]);
+    el.value = value === null || value === undefined ? "" : String(value);
+  });
+}
+
+function _adminRowValue(row, keys){
+  return _adminResolveValue(row, keys);
+}
+
+function _adminBuildPayloadFromForm(bindings){
+  const payload = {};
+
+  bindings.forEach(binding => {
+    const el = document.getElementById(binding.formId);
+
+    if(!el){
+      return;
+    }
+
+    const value = String(el.value || "").trim();
+    const modelKey = binding.modelKey || binding.saveKey || "";
+    const saveKey = binding.saveKey || modelKey || "";
+
+    if(saveKey){
+      payload[saveKey] = value;
+      payload[_adminNormalizeKey(saveKey)] = value;
+    }
+
+    if(modelKey && modelKey !== saveKey){
+      payload[modelKey] = value;
+      payload[_adminNormalizeKey(modelKey)] = value;
+    }
+  });
+
+  return payload;
+}
+
+function _ensureAdminResizeStyles(){
+  if(document.getElementById("adminResizeStyles")){
+    return;
+  }
+
+  const style = document.createElement("style");
+  style.id = "adminResizeStyles";
+  style.textContent = `
+    table.dataTable thead th{
+      position: relative;
+    }
+    .dt-col-resizer{
+      position: absolute;
+      top: 0;
+      right: -3px;
+      width: 8px;
+      height: 100%;
+      cursor: col-resize;
+      user-select: none;
+      z-index: 2;
+    }
+    .dt-col-resizer:hover{
+      background: rgba(13, 110, 253, 0.22);
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function _enableColumnResize(tableSelector, dt){
+  if(!dt){
+    return;
+  }
+
+  _ensureAdminResizeStyles();
+
+  const table = $(tableSelector);
+  table.find("thead th").each(function(colIdx){
+    const th = $(this);
+
+    th.find(".dt-col-resizer").remove();
+
+    const resizer = $("<span class='dt-col-resizer'></span>");
+    th.append(resizer);
+
+    resizer.on("mousedown", function(ev){
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      const startX = ev.pageX;
+      const startWidth = th.outerWidth();
+
+      $(document).on("mousemove.dtResize", function(moveEv){
+        const delta = moveEv.pageX - startX;
+        const newWidth = Math.max(72, startWidth + delta);
+
+        th.css("width", `${newWidth}px`);
+        $(dt.column(colIdx).nodes()).css("width", `${newWidth}px`);
+
+        if(dt.settings && dt.settings()[0] && dt.settings()[0].aoColumns[colIdx]){
+          dt.settings()[0].aoColumns[colIdx].sWidth = `${newWidth}px`;
+        }
+
+        dt.columns.adjust();
+      });
+
+      $(document).on("mouseup.dtResize", function(){
+        $(document).off("mousemove.dtResize mouseup.dtResize");
+      });
+    });
+  });
+}
+
+function _renderAdminDynamicTable(config){
+  const selector = config.selector;
+  const rows = Array.isArray(config.rows) ? config.rows : [];
+  const keys = _adminResolveKeys(rows, config.columnOrder || []);
+  const orderKey = config.orderKey || "";
+
+  const thead = document.querySelector(`${selector} thead`);
+  if(thead){
+    thead.innerHTML = `
+      <tr>
+        ${keys.map(k => `<th>${_adminColumnLabel(k)}</th>`).join("")}
+        <th>Acciones</th>
+      </tr>
+    `;
+  }
+
+  _destroyDataTableIfExists(selector);
+
+  const columns = [
+    ...keys.map(k => ({
+      data: k,
+      width: "140px",
+      render: value => _asText(value)
+    })),
+    {
+      data: null,
+      width: "120px",
+      orderable: false,
+      searchable: false,
+      render: (row) => config.actionsRender(row)
+    }
+  ];
+
+  const orderIndex = orderKey ? keys.indexOf(orderKey) : -1;
+
+  const dt = $(selector).DataTable({
+    destroy: true,
+    responsive: false,
+    scrollX: true,
+    autoWidth: false,
+    pageLength: 10,
+    data: rows,
+    order: orderIndex >= 0 ? [[orderIndex, "desc"]] : [[0, "desc"]],
+    columns: columns
+  });
+
+  _enableColumnResize(selector, dt);
+
+  return dt;
+}
+
+function _setFormReadOnly(containerId, readOnly){
+  const root = document.getElementById(containerId);
+
+  if(!root){
+    return;
+  }
+
+  root.querySelectorAll("input, select, textarea").forEach(el => {
+    if(el.type === "hidden"){
+      return;
+    }
+    el.disabled = !!readOnly;
+  });
+}
+
+function _applySprintModalMode(mode){
+  const isReadOnly = mode === "VIEW";
+  const saveBtn = document.getElementById("btnGuardarSprint");
+  const title = document.querySelector("#modalSprint .modal-title");
+
+  _setFormReadOnly("modalSprint", isReadOnly);
+
+  if(saveBtn){
+    saveBtn.classList.toggle("d-none", isReadOnly);
+  }
+
+  if(title){
+    title.textContent = isReadOnly ? "Sprint (solo lectura)" : "Sprint";
+  }
+}
+
+function _applyCalendarioModalMode(mode){
+  const isReadOnly = mode === "VIEW";
+  const saveBtn = document.getElementById("btnGuardarCalendario");
+  const title = document.querySelector("#modalCalendario .modal-title");
+
+  _setFormReadOnly("modalCalendario", isReadOnly);
+
+  if(saveBtn){
+    saveBtn.classList.toggle("d-none", isReadOnly);
+  }
+
+  if(title){
+    title.textContent = isReadOnly ? "Evento calendario (solo lectura)" : "Evento calendario";
+  }
+}
+
+function _applyUsuarioModalMode(mode){
+  const isReadOnly = mode === "VIEW";
+  const saveBtn = document.getElementById("btnGuardarUsuarioSprint");
+  const title = document.querySelector("#modalUsuarioSprint .modal-title");
+
+  _setFormReadOnly("modalUsuarioSprint", isReadOnly);
+
+  const nombreInput = document.getElementById("usrNombreLabel");
+  if(nombreInput){
+    nombreInput.disabled = true;
+  }
+
+  if(saveBtn){
+    saveBtn.classList.toggle("d-none", isReadOnly);
+  }
+
+  if(title){
+    title.textContent = isReadOnly ? "Usuario (solo lectura)" : "Usuario";
+  }
+}
+
+function initUsuariosAdmin(opts = {}){
+  window.adminUsersViewMode = opts && opts.view === "ELIMINADAS" ? "ELIMINADAS" : "ACTIVAS";
+  refreshUsuariosAdmin();
+}
+
+function refreshUsuariosAdmin(){
+
+  showLoading("Cargando usuarios...");
+
+  runServer("ADMIN_USERS_list", typeof getClientUserContext === "function" ? getClientUserContext() : null)
+    .then(pack => {
+      const payload = pack && typeof pack === "object" ? pack : {};
+      const data = Array.isArray(payload.data) ? payload.data : [];
+      const columnOrder = Array.isArray(payload.columnOrder) ? payload.columnOrder : [];
+
+      const showDeleted = window.adminUsersViewMode === "ELIMINADAS";
+
+      const filteredData = data.filter(row => {
+        const activo = _adminIsTruthy(_adminRowValue(row, ["Activo", "activo"]));
+        return showDeleted ? !activo : activo;
+      });
+
+      window.adminUsersCache = filteredData;
+      window.adminUsersColumnOrder = columnOrder;
+
+      _renderAdminDynamicTable({
+        selector: "#tblUsuariosAdmin",
+        rows: filteredData,
+        columnOrder: columnOrder,
+        orderKey: columnOrder.includes("Nombre") ? "Nombre" : (columnOrder[0] || "Nombre"),
+        actionsRender: (row) => `
+          <button class="btn btn-sm btn-primary" onclick="verUsuarioAdmin('${String(_adminRowValue(row, ["ID", "id", "Nombre", "nombre"]) || "").replace(/'/g, "\\'")}')" title="Ver">
+            <i class="bi bi-eye"></i>
+          </button>
+          ${
+            showDeleted
+              ? `<button class="btn btn-success btn-sm" onclick="reciclarUsuarioAdmin('${String(_adminRowValue(row, ["ID", "id", "Nombre", "nombre"]) || "").replace(/'/g, "\\'")}')" title="Reciclar"><i class="bi bi-arrow-counterclockwise"></i></button>`
+              : `<button class="btn btn-warning btn-sm" onclick="editarUsuarioAdmin('${String(_adminRowValue(row, ["ID", "id", "Nombre", "nombre"]) || "").replace(/'/g, "\\'")}')" title="Editar"><i class="bi bi-pencil-square"></i></button>
+                 <button class="btn btn-danger btn-sm" onclick="eliminarUsuarioAdmin('${String(_adminRowValue(row, ["ID", "id", "Nombre", "nombre"]) || "").replace(/'/g, "\\'")}')" title="Eliminar"><i class="bi bi-trash3"></i></button>`
+          }
+        `
+      });
+    })
+    .catch(err => {
+      Swal.fire({icon:'error',title:'Error',text: err.message || String(err)});
+    })
+    .finally(() => hideLoading());
+}
+
+function verUsuarioAdmin(id){
+  abrirModalUsuarioSprint(id, {mode: "VIEW"});
+}
+
+function editarUsuarioAdmin(id){
+  abrirModalUsuarioSprint(id, {mode: "EDIT"});
+}
+
+function abrirModalUsuarioSprint(id, opts = {}){
+
+  const mode = opts && opts.mode ? String(opts.mode).toUpperCase() : "EDIT";
+  window.adminUserModalMode = mode;
+
+  const row = (window.adminUsersCache || []).find(x => {
+    const rowId = String(_adminRowValue(x, ["ID", "id"]) || "");
+    const rowName = String(_adminRowValue(x, ["Nombre", "nombre"]) || "");
+    const target = String(id || "");
+
+    return rowId === target || rowName === target;
+  }) || {};
+
+  let sprintRolesJson = "{}";
+
+  try{
+    const prefRaw = String(_adminRowValue(row, ["Preferencias", "preferencias"]) || "").trim();
+
+    if(prefRaw){
+      const pref = JSON.parse(prefRaw);
+      sprintRolesJson = JSON.stringify(pref && pref.SPRINT_ROLES ? pref.SPRINT_ROLES : {});
+    }
+  }catch(error){
+    sprintRolesJson = "{}";
+  }
+
+  const nombre = _adminRowValue(row, ["Nombre", "nombre"]);
+  const userId = _adminRowValue(row, ["ID", "id"]);
+
+  document.getElementById("usrIdModal").value = userId || "";
+  document.getElementById("usrNombreModal").value = nombre || "";
+  document.getElementById("usrNombreLabel").value = nombre || "";
+  document.getElementById("usrSprintRolesJson").value = sprintRolesJson;
+
+  _applyUsuarioModalMode(mode);
+
+  bootstrap.Modal
+    .getOrCreateInstance(document.getElementById("modalUsuarioSprint"))
+    .show();
+}
+
+function guardarRolesSprintUsuario(){
+
+  if(window.adminUserModalMode === "VIEW"){
+    return;
+  }
+
+  const nombre = document.getElementById("usrNombreModal").value;
+  const sprintRolesRaw = document.getElementById("usrSprintRolesJson").value || "{}";
+
+  showLoading("Guardando usuario...");
+
+  runServer(
+    "ADMIN_USERS_saveSprintRoles",
+    {Nombre: nombre, sprintRolesRaw: sprintRolesRaw},
+    typeof getClientUserContext === "function" ? getClientUserContext() : null
+  )
+  .then(() => {
+    bootstrap.Modal
+      .getOrCreateInstance(document.getElementById("modalUsuarioSprint"))
+      .hide();
+
+    refreshUsuariosAdmin();
+  })
+  .catch(err => {
+    Swal.fire({icon:'error',title:'Error',text: err.message || String(err)});
+  })
+  .finally(() => hideLoading());
+}
+
+function _cambiarEstadoUsuarioAdmin(id, activo){
+  const itemId = String(id || "").trim();
+
+  if(!itemId){
+    return;
+  }
+
+  const accion = activo ? "reciclar" : "eliminar";
+
+  const row = (window.adminUsersCache || []).find(x => {
+    const rowId = String(_adminRowValue(x, ["ID", "id"]) || "");
+    const rowNombre = String(_adminRowValue(x, ["Nombre", "nombre"]) || "");
+    return rowId === itemId || rowNombre === itemId;
+  }) || {};
+
+  const payload = {
+    id: String(_adminRowValue(row, ["ID", "id"]) || "").trim(),
+    nombre: String(_adminRowValue(row, ["Nombre", "nombre"]) || itemId).trim(),
+    activo: !!activo
+  };
+
+  Swal.fire({
+    icon: "warning",
+    title: activo ? "Reciclar usuario" : "Eliminar usuario",
+    text: `Se va a ${accion} logicamente el usuario ${itemId}.`,
+    showCancelButton: true,
+    confirmButtonText: activo ? "Reciclar" : "Eliminar",
+    cancelButtonText: "Cancelar"
+  }).then(result => {
+    if(!result.isConfirmed){
+      return;
+    }
+
+    showLoading(activo ? "Reciclando usuario..." : "Eliminando usuario...");
+
+    runServer(
+      "ADMIN_USERS_toggleActive",
+      payload,
+      typeof getClientUserContext === "function" ? getClientUserContext() : null
+    )
+    .then(() => {
+      refreshUsuariosAdmin();
+    })
+    .catch(err => {
+      Swal.fire({icon:'error',title:'Error',text: err.message || String(err)});
+    })
+    .finally(() => hideLoading());
+  });
+}
+
+function eliminarUsuarioAdmin(id){
+  _cambiarEstadoUsuarioAdmin(id, false);
+}
+
+function reciclarUsuarioAdmin(id){
+  _cambiarEstadoUsuarioAdmin(id, true);
+}
+
+function initSprintsAdmin(opts = {}){
+  window.adminSprintsViewMode = opts && opts.view === "ELIMINADAS" ? "ELIMINADAS" : "ACTIVAS";
+  refreshSprintsAdmin();
+}
+
+function refreshSprintsAdmin(){
+
+  showLoading("Cargando sprints...");
+
+  runServer(
+    "BACKLOG_loadData",
+    {view: window.adminSprintsViewMode},
+    typeof getClientUserContext === "function" ? getClientUserContext() : null
+  )
+    .then(pack => {
+      const payload = pack && typeof pack === "object" ? pack : {};
+      const data = Array.isArray(payload.data) ? payload.data : [];
+      const columnOrder = Array.isArray(payload.columnOrder) ? payload.columnOrder : [];
+
+      window.adminSprintsCache = data;
+      window.adminSprintsColumnOrder = columnOrder;
+
+      _renderAdminDynamicTable({
+        selector: "#tblSprintsAdmin",
+        rows: data,
+        columnOrder: columnOrder,
+        orderKey: columnOrder.includes("ID") ? "ID" : (columnOrder[0] || "ID"),
+        actionsRender: (row) => `
+          <button class="btn btn-sm btn-primary" onclick="verSprint('${String(_adminRowValue(row, ["ID", "id"]) || "").replace(/'/g, "\\'")}')" title="Ver">
+            <i class="bi bi-eye"></i>
+          </button>
+          ${
+            window.adminSprintsViewMode === "ELIMINADAS"
+              ? `<button class="btn btn-success btn-sm" onclick="reciclarSprint('${String(_adminRowValue(row, ["ID", "id"]) || "").replace(/'/g, "\\'")}')" title="Reciclar"><i class="bi bi-arrow-counterclockwise"></i></button>`
+              : `<button class="btn btn-warning btn-sm" onclick="editarSprint('${String(_adminRowValue(row, ["ID", "id"]) || "").replace(/'/g, "\\'")}')" title="Editar"><i class="bi bi-pencil-square"></i></button>
+                 <button class="btn btn-danger btn-sm" onclick="eliminarSprint('${String(_adminRowValue(row, ["ID", "id"]) || "").replace(/'/g, "\\'")}')" title="Eliminar"><i class="bi bi-trash3"></i></button>`
+          }
+        `
+      });
+    })
+    .catch(err => {
+      Swal.fire({icon:'error',title:'Error',text: err.message || String(err)});
+    })
+    .finally(() => hideLoading());
+}
+
+function verSprint(id){
+  abrirModalSprint(id, {mode: "VIEW"});
+}
+
+function editarSprint(id){
+  abrirModalSprint(id, {mode: "EDIT"});
+}
+
+function abrirModalSprint(id = "", opts = {}){
+
+  const mode = opts && opts.mode ? String(opts.mode).toUpperCase() : "EDIT";
+  window.adminSprintModalMode = mode;
+
+  const row = (window.adminSprintsCache || []).find(x => String(_adminRowValue(x, ["ID", "id"])) === String(id || "")) || {};
+
+  _adminFillFormFromRow(ADMIN_SPRINT_BINDINGS, row);
+
+  _applySprintModalMode(mode);
+
+  bootstrap.Modal
+    .getOrCreateInstance(document.getElementById("modalSprint"))
+    .show();
+}
+
+function eliminarSprint(id){
+  const itemId = String(id || "").trim();
+
+  if(!itemId){
+    return;
+  }
+
+  Swal.fire({
+    icon: "warning",
+    title: "Eliminar sprint",
+    text: `Se eliminara logicamente el sprint ${itemId}.`,
+    showCancelButton: true,
+    confirmButtonText: "Eliminar",
+    cancelButtonText: "Cancelar"
+  }).then(result => {
+    if(!result.isConfirmed){
+      return;
+    }
+
+    showLoading("Eliminando sprint...");
+
+    runServer("BACKLOG_delete", itemId, typeof getClientUserContext === "function" ? getClientUserContext() : null)
+      .then(() => {
+        refreshSprintsAdmin();
+      })
+      .catch(err => {
+        Swal.fire({icon:"error",title:"Error",text: err.message || String(err)});
+      })
+      .finally(() => hideLoading());
+  });
+}
+
+function reciclarSprint(id){
+  const itemId = String(id || "").trim();
+
+  if(!itemId){
+    return;
+  }
+
+  const row = (window.adminSprintsCache || []).find(x => String(_adminRowValue(x, ["ID", "id"])) === itemId);
+
+  if(!row){
+    Swal.fire({icon: "warning", title: "No encontrado", text: "No se encontro el sprint para reciclar."});
+    return;
+  }
+
+  const payload = {
+    ID: _adminRowValue(row, ["ID", "id"]),
+    "Descripción": _adminRowValue(row, ["Descripción", "descripcion"]),
+    Sprint: _adminRowValue(row, ["Sprint", "sprint"]),
+    Prioridad: _adminRowValue(row, ["Prioridad", "prioridad"]),
+    Esfuerzo: _adminRowValue(row, ["Esfuerzo", "esfuerzo"]),
+    "Verificación": _adminRowValue(row, ["Verificación", "verificacion"]),
+    DEV: _adminRowValue(row, ["DEV", "dev"]),
+    QA: _adminRowValue(row, ["QA", "qa"])
+  };
+
+  showLoading("Reciclando sprint...");
+
+  runServer("BACKLOG_save", payload, typeof getClientUserContext === "function" ? getClientUserContext() : null)
+    .then(() => {
+      refreshSprintsAdmin();
+    })
+    .catch(err => {
+      Swal.fire({icon:"error",title:"Error",text: err.message || String(err)});
+    })
+    .finally(() => hideLoading());
+}
+
+function guardarSprint(){
+
+  if(window.adminSprintModalMode === "VIEW"){
+    return;
+  }
+
+  const payload = _adminBuildPayloadFromForm(ADMIN_SPRINT_BINDINGS);
+
+  showLoading("Guardando sprint...");
+
+  runServer("BACKLOG_save", payload, typeof getClientUserContext === "function" ? getClientUserContext() : null)
+    .then(() => {
+      bootstrap.Modal
+        .getOrCreateInstance(document.getElementById("modalSprint"))
+        .hide();
+
+      refreshSprintsAdmin();
+    })
+    .catch(err => {
+      Swal.fire({icon:'error',title:'Error',text: err.message || String(err)});
+    })
+    .finally(() => hideLoading());
+}
+
+function initCalendarioAdmin(opts = {}){
+  window.adminCalendarioViewMode = opts && opts.view === "ELIMINADAS" ? "ELIMINADAS" : "ACTIVAS";
+  refreshCalendarioAdmin();
+}
+
+function refreshCalendarioAdmin(){
+
+  showLoading("Cargando calendario...");
+
+  runServer(
+    "CALENDAR_loadData",
+    {view: window.adminCalendarioViewMode},
+    typeof getClientUserContext === "function" ? getClientUserContext() : null
+  )
+    .then(pack => {
+      const payload = pack && typeof pack === "object" ? pack : {};
+      const data = Array.isArray(payload.data) ? payload.data : [];
+      const columnOrder = Array.isArray(payload.columnOrder) ? payload.columnOrder : [];
+
+      window.adminCalendarioCache = data;
+      window.adminCalendarioColumnOrder = columnOrder;
+
+      _renderAdminDynamicTable({
+        selector: "#tblCalendarioAdmin",
+        rows: data,
+        columnOrder: columnOrder,
+        orderKey: columnOrder.includes("Inicio") ? "Inicio" : (columnOrder[0] || "Módulo"),
+        actionsRender: (row) => `
+          <button class="btn btn-sm btn-primary" onclick="verCalendario('${String(_adminRowValue(row, ["__rowNumber"]) || "").replace(/'/g, "\\'")}')" title="Ver">
+            <i class="bi bi-eye"></i>
+          </button>
+          ${
+            window.adminCalendarioViewMode === "ELIMINADAS"
+              ? `<button class="btn btn-success btn-sm" onclick="reciclarEventoCalendario('${String(_adminRowValue(row, ["__rowNumber"]) || "").replace(/'/g, "\\'")}')" title="Reciclar"><i class="bi bi-arrow-counterclockwise"></i></button>`
+              : `<button class="btn btn-warning btn-sm" onclick="editarCalendario('${String(_adminRowValue(row, ["__rowNumber"]) || "").replace(/'/g, "\\'")}')" title="Editar"><i class="bi bi-pencil-square"></i></button>
+                 <button class="btn btn-danger btn-sm" onclick="eliminarEventoCalendario('${String(_adminRowValue(row, ["__rowNumber"]) || "").replace(/'/g, "\\'")}')" title="Eliminar"><i class="bi bi-trash3"></i></button>`
+          }
+        `
+      });
+    })
+    .catch(err => {
+      Swal.fire({icon:'error',title:'Error',text: err.message || String(err)});
+    })
+    .finally(() => hideLoading());
+}
+
+function verCalendario(id){
+  abrirModalCalendario(id, {mode: "VIEW"});
+}
+
+function editarCalendario(id){
+  abrirModalCalendario(id, {mode: "EDIT"});
+}
+
+function abrirModalCalendario(id = "", opts = {}){
+
+  const mode = opts && opts.mode ? String(opts.mode).toUpperCase() : "EDIT";
+  window.adminCalendarioModalMode = mode;
+
+  const row = (window.adminCalendarioCache || []).find(x => String(_adminRowValue(x, ["__rowNumber"])) === String(id || "")) || {};
+
+  _adminFillFormFromRow(ADMIN_CALENDARIO_BINDINGS, row);
+
+  _applyCalendarioModalMode(mode);
+
+  bootstrap.Modal
+    .getOrCreateInstance(document.getElementById("modalCalendario"))
+    .show();
+}
+
+function eliminarEventoCalendario(id){
+  const itemId = String(id || "").trim();
+
+  if(!itemId){
+    return;
+  }
+
+  Swal.fire({
+    icon: "warning",
+    title: "Eliminar evento",
+    text: `Se eliminara logicamente el evento ${itemId}.`,
+    showCancelButton: true,
+    confirmButtonText: "Eliminar",
+    cancelButtonText: "Cancelar"
+  }).then(result => {
+    if(!result.isConfirmed){
+      return;
+    }
+
+    showLoading("Eliminando evento...");
+
+    runServer("CALENDAR_delete", itemId, typeof getClientUserContext === "function" ? getClientUserContext() : null)
+      .then(() => {
+        refreshCalendarioAdmin();
+      })
+      .catch(err => {
+        Swal.fire({icon:"error",title:"Error",text: err.message || String(err)});
+      })
+      .finally(() => hideLoading());
+  });
+}
+
+function reciclarEventoCalendario(id){
+  const itemId = String(id || "").trim();
+
+  if(!itemId){
+    return;
+  }
+
+  const row = (window.adminCalendarioCache || []).find(x => String(_adminRowValue(x, ["__rowNumber"])) === itemId);
+
+  if(!row){
+    Swal.fire({icon: "warning", title: "No encontrado", text: "No se encontro el evento para reciclar."});
+    return;
+  }
+
+  const payload = {
+    __rowNumber: _adminRowValue(row, ["__rowNumber"]),
+    "Módulo": _adminRowValue(row, ["Módulo", "modulo"]),
+    "Actividades (RQ)": _adminRowValue(row, ["Actividades (RQ)", "actividades"]),
+    Sprint: _adminRowValue(row, ["Sprint", "sprint"]),
+    Inicio: _adminRowValue(row, ["Inicio", "inicio"]),
+    Fin: _adminRowValue(row, ["Fin", "fin"]),
+    "Duración": _adminRowValue(row, ["Duración", "duracion"])
+  };
+
+  showLoading("Reciclando evento...");
+
+  runServer("CALENDAR_save", payload, typeof getClientUserContext === "function" ? getClientUserContext() : null)
+    .then(() => {
+      refreshCalendarioAdmin();
+    })
+    .catch(err => {
+      Swal.fire({icon:"error",title:"Error",text: err.message || String(err)});
+    })
+    .finally(() => hideLoading());
+}
+
+function guardarEventoCalendario(){
+
+  if(window.adminCalendarioModalMode === "VIEW"){
+    return;
+  }
+
+  const payload = _adminBuildPayloadFromForm(ADMIN_CALENDARIO_BINDINGS);
+
+  showLoading("Guardando evento...");
+
+  runServer("CALENDAR_save", payload, typeof getClientUserContext === "function" ? getClientUserContext() : null)
+    .then(() => {
+      bootstrap.Modal
+        .getOrCreateInstance(document.getElementById("modalCalendario"))
+        .hide();
+
+      refreshCalendarioAdmin();
+    })
+    .catch(err => {
+      Swal.fire({icon:'error',title:'Error',text: err.message || String(err)});
+    })
+    .finally(() => hideLoading());
+}
+
+window.initUsuariosAdmin = initUsuariosAdmin;
+window.initSprintsAdmin = initSprintsAdmin;
+window.initCalendarioAdmin = initCalendarioAdmin;
+</script>
